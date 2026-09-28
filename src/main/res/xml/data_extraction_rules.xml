@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Backup rules use allowlist (include) mode. Only the files listed below are backed up;
+    everything else (MFA hashes, crash logs, databases, session data, cache, etc.) is
+    automatically excluded because it is not in an <include> entry.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="com.linkpoint_preferences.xml"/>
+        <include domain="sharedpref" path="theme_manager.xml"/>
+        <include domain="sharedpref" path="cache_settings.xml"/>
+        <include domain="sharedpref" path="destination_guide.xml"/>
+    </cloud-backup>
+
+    <device-transfer>
+        <include domain="sharedpref" path="com.linkpoint_preferences.xml"/>
+        <include domain="sharedpref" path="theme_manager.xml"/>
+        <include domain="sharedpref" path="cache_settings.xml"/>
+        <include domain="sharedpref" path="destination_guide.xml"/>
+    </device-transfer>
+</data-extraction-rules>

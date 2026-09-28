@@ -1,0 +1,525 @@
+package com.linkpoint.network.core
+
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.os.Build
+import android.util.Log
+import com.linkpoint.network.NetworkDiagnostics
+import com.linkpoint.network.NetworkLogger
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.math.max
+import kotlin.math.min
+
+/**
+ * Manages connection quality detection and monitoring.
+ * Based on patterns from the official Second Life app.
+ * 
+ * Features:
+ * - Real-time network quality assessment
+ * - Latency tracking and averaging
+ * - Bandwidth estimation
+ * - Network change detection
+ * - Quality-based timeout recommendations
+ */
+class ConnectionQualityManager(private val context: Context) {
+    
+    companion object {
+        private const val TAG = "ConnectionQuality"
+        
+        // Quality thresholds
+        private const val EXCELLENT_LATENCY_MS = 50
+        private const val GOOD_LATENCY_MS = 100
+        private const val FAIR_LATENCY_MS = 200
+        private const val POOR_LATENCY_MS = 500
+        
+        private const val EXCELLENT_BANDWIDTH_KBPS = 50000  // 50 Mbps
+        private const val GOOD_BANDWIDTH_KBPS = 10000       // 10 Mbps
+        private const val FAIR_BANDWIDTH_KBPS = 2000        // 2 Mbps
+        
+        // Sample window
+        private const val MAX_LATENCY_SAMPLES = 10
+        private const val MAX_ERROR_SAMPLES = 20
+        
+        // Timeout configuration based on official app patterns
+        const val CONNECT_TIMEOUT_MS = 60_000L        // 60 seconds for connection
+        const val SUBSCRIBE_TIMEOUT_MS = 30_000L      // 30 seconds for subscriptions
+        const val PUSH_TIMEOUT_MS = 15_000L           // 15 seconds for push operations
+        const val READ_TIMEOUT_MS = 60_000L           // 60 seconds for reads
+        const val WRITE_TIMEOUT_MS = 30_000L          // 30 seconds for writes
+
+        /**
+         * How long after `onLost` we keep [isInHandoff] = true. Sized to
+         * cover the ~3-8s typical Wi-Fi↔cellular handoff blackout from the
+         * IMC 2016 cellular bufferbloat measurements; longer than that and
+         * the higher-level reconnect path is the right tool. Balakrishnan
+         * et al. 1996: short gaps = wireless loss (don't tear down state),
+         * long gaps = real failure.
+         */
+        const val HANDOFF_GRACE_MS = 8_000L
+    }
+
+    /**
+     * True if the active network was lost within [HANDOFF_GRACE_MS] and we
+     * have not yet seen `onAvailable`. Watchdogs and reconnect coordinators
+     * should treat this window as transient — neither retransmit backoff
+     * (counterproductive on a black hole) nor a full re-login (premature).
+     */
+    fun isInHandoffWindow(): Boolean {
+        if (!_isInHandoff.value) return false
+        val sinceLost = System.currentTimeMillis() - lastNetworkLostAt
+        if (sinceLost > HANDOFF_GRACE_MS) {
+            _isInHandoff.value = false
+            return false
+        }
+        return true
+    }
+    
+    /**
+     * Connection quality levels
+     */
+    enum class Quality {
+        EXCELLENT,
+        GOOD,
+        FAIR,
+        POOR,
+        UNKNOWN
+    }
+    
+    // State flows
+    private val _quality = MutableStateFlow(Quality.UNKNOWN)
+    val quality: StateFlow<Quality> = _quality.asStateFlow()
+    
+    private val _isConnected = MutableStateFlow(false)
+    val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+    
+    private val _networkType = MutableStateFlow(NetworkDiagnostics.NetworkType.UNKNOWN)
+    val networkType: StateFlow<NetworkDiagnostics.NetworkType> = _networkType.asStateFlow()
+
+    /**
+     * Whether the active network is metered (`!NET_CAPABILITY_NOT_METERED`).
+     * Cellular is almost always metered; Wi-Fi behind a tethered hotspot can
+     * also flip to metered. Used by [com.linkpoint.network.MeteredAssetGate]
+     * to cap concurrent HTTPS asset fetch on cellular — the IEEE 6733597
+     * (TCP-RRE) finding is that a saturated cellular uplink delays return
+     * ACKs enough to stall unrelated downloads, so concurrent download caps
+     * matter more on metered cellular than on Wi-Fi.
+     */
+    private val _isMetered = MutableStateFlow(false)
+    val isMetered: StateFlow<Boolean> = _isMetered.asStateFlow()
+
+    /**
+     * Set when the system has reported `onLost` for the active network and
+     * we are within [HANDOFF_GRACE_MS] of that event. The reliable-resend
+     * watchdog and the auto-relogin coordinator both check this flag so
+     * they don't burn reconnect attempts during a Wi-Fi↔cellular handoff
+     * (Balakrishnan et al. 1996: "treat wireless loss as wireless loss,
+     * not connection failure").
+     */
+    private val _isInHandoff = MutableStateFlow(false)
+    val isInHandoff: StateFlow<Boolean> = _isInHandoff.asStateFlow()
+    @Volatile private var lastNetworkLostAt = 0L
+    
+    // Latency tracking
+    private val latencySamples = ConcurrentLinkedQueue<Long>()
+    private var averageLatencyMs: Long = 0
+    
+    // Error rate tracking
+    private val errorSamples = ConcurrentLinkedQueue<Boolean>()  // true = error, false = success
+    private var errorRate: Float = 0f
+    
+    // Bandwidth estimation
+    private var estimatedBandwidthKbps: Int = 0
+    
+    // Network callback
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    
+    // Network change listeners (for DNS cache clearing, etc.)
+    private val networkChangeListeners = mutableListOf<() -> Unit>()
+    
+    init {
+        startMonitoring()
+        updateNetworkInfo()
+    }
+    
+    /**
+     * Start monitoring network changes
+     */
+    private fun startMonitoring() {
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                Log.d(TAG, "Network available")
+                NetworkLogger.log(
+                    NetworkLogger.Level.INFO,
+                    NetworkLogger.Category.CONNECTIVITY,
+                    "🟢 Network available (handle=${network.networkHandle})"
+                )
+                _isConnected.value = true
+                // If we're inside the handoff grace window we just transitioned
+                // (e.g. Wi-Fi → cellular). Clear the flag so the resend
+                // watchdog and reconnect coordinator can resume normal cadence.
+                _isInHandoff.value = false
+                updateNetworkInfo()
+                // Notify listeners of network change (for DNS cache clearing, etc.)
+                notifyNetworkChange()
+            }
+
+            override fun onLost(network: Network) {
+                Log.d(TAG, "Network lost")
+                NetworkLogger.log(
+                    NetworkLogger.Level.WARN,
+                    NetworkLogger.Category.CONNECTIVITY,
+                    "🔴 Network lost (handle=${network.networkHandle})"
+                )
+                _isConnected.value = false
+                _quality.value = Quality.UNKNOWN
+                // Mark the start of a possible handoff. If `onAvailable` does
+                // NOT fire within HANDOFF_GRACE_MS the higher-level reconnect
+                // path will eventually take over (existing watchdogs); but
+                // during the grace window we want to suppress retransmit
+                // backoff and reconnect attempts because they're worse than
+                // useless across a handoff.
+                lastNetworkLostAt = System.currentTimeMillis()
+                _isInHandoff.value = true
+                // Notify listeners of network change
+                notifyNetworkChange()
+            }
+
+            override fun onCapabilitiesChanged(
+                network: Network,
+                capabilities: NetworkCapabilities
+            ) {
+                logCapabilitiesChanged(network, capabilities)
+                updateFromCapabilities(capabilities)
+                // Mirror the metered bit into the StateFlow — this is the
+                // canonical source ConnectivityManager publishes, and it can
+                // change at runtime (e.g. user toggles "metered" on a Wi-Fi).
+                _isMetered.value = !capabilities.hasCapability(
+                    NetworkCapabilities.NET_CAPABILITY_NOT_METERED
+                )
+            }
+        }
+        
+        // Validate callback was created successfully
+        val callback = networkCallback 
+            ?: throw IllegalStateException("Network callback was not initialized")
+        
+        try {
+            connectivityManager.registerNetworkCallback(request, callback)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register network callback: ${e.message}")
+        }
+    }
+    
+    /**
+     * Stop monitoring network changes
+     */
+    fun stopMonitoring() {
+        networkCallback?.let {
+            try {
+                connectivityManager.unregisterNetworkCallback(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to unregister network callback: ${e.message}")
+            }
+        }
+        networkCallback = null
+        networkChangeListeners.clear()
+    }
+    
+    /**
+     * Register a listener for network changes.
+     * Used by GrpcChannelFactory to clear DNS cache when network changes.
+     */
+    fun addNetworkChangeListener(listener: () -> Unit) {
+        synchronized(networkChangeListeners) {
+            networkChangeListeners.add(listener)
+        }
+    }
+    
+    /**
+     * Remove a network change listener.
+     */
+    fun removeNetworkChangeListener(listener: () -> Unit) {
+        synchronized(networkChangeListeners) {
+            networkChangeListeners.remove(listener)
+        }
+    }
+    
+    /**
+     * Notify all listeners of network change.
+     * Creates a snapshot of listeners to avoid holding the lock during callback execution,
+     * which could cause deadlocks if a listener tries to acquire another lock.
+     */
+    private fun notifyNetworkChange() {
+        val listeners = synchronized(networkChangeListeners) {
+            networkChangeListeners.toList() // Create a snapshot
+        }
+        listeners.forEach { listener ->
+            try {
+                listener()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error notifying network change listener", e)
+            }
+        }
+    }
+    
+    /**
+     * Update network info from NetworkDiagnostics
+     */
+    private fun updateNetworkInfo() {
+        try {
+            val info = NetworkDiagnostics.getNetworkInfo(context)
+            _isConnected.value = info.isConnected
+            _networkType.value = info.type
+            _isMetered.value = info.isMetered
+            estimatedBandwidthKbps = info.estimatedBandwidthKbps
+            
+            // Update quality based on network type and bandwidth
+            determineQuality()
+            
+            Log.d(TAG, "Network updated: ${info.displayName}, " +
+                "bandwidth: ${info.estimatedBandwidthKbps}kbps, " +
+                "quality: ${_quality.value}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating network info: ${e.message}")
+        }
+    }
+    
+    /**
+     * Emit a structured CONNECTIVITY log entry every time capabilities change.
+     * Capability churn (validated flips off, downstream bandwidth drops) often
+     * precedes the inbound-data stalls we've been chasing — surfacing it in
+     * the same log as UDP send/recv lets us correlate.
+     */
+    private fun logCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+        val transports = buildList {
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) add("WIFI")
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) add("CELLULAR")
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) add("ETHERNET")
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) add("VPN")
+        }.joinToString(",").ifEmpty { "?" }
+        val internet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        val validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        val notMetered = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        val downstream = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            capabilities.linkDownstreamBandwidthKbps
+        } else {
+            -1
+        }
+        val upstream = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            capabilities.linkUpstreamBandwidthKbps
+        } else {
+            -1
+        }
+        NetworkLogger.log(
+            NetworkLogger.Level.DEBUG,
+            NetworkLogger.Category.CONNECTIVITY,
+            "Capabilities (handle=${network.networkHandle}): transport=$transports " +
+                "internet=$internet validated=$validated notMetered=$notMetered " +
+                "down=${downstream}kbps up=${upstream}kbps"
+        )
+    }
+
+    /**
+     * Update from network capabilities
+     * 
+     * IMPORTANT: We only require NET_CAPABILITY_INTERNET, NOT NET_CAPABILITY_VALIDATED.
+     * 
+     * NET_CAPABILITY_VALIDATED is too strict and fails intermittently on mobile networks:
+     * - LTE networks where validation is slow or fails temporarily  
+     * - Networks behind captive portals
+     * - Networks where Google's connectivity check is blocked
+     * 
+     * The actual HTTP request will determine if connectivity works.
+     * This matches the reference viewer's behavior (which logs in instantly on the same networks).
+     */
+    private fun updateFromCapabilities(capabilities: NetworkCapabilities) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val downstream = capabilities.linkDownstreamBandwidthKbps
+            if (downstream > 0) {
+                estimatedBandwidthKbps = downstream
+            }
+        }
+        
+        // Only require internet capability - NOT validated
+        // Validated check is too strict for many mobile networks
+        _isConnected.value = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        
+        determineQuality()
+    }
+    
+    /**
+     * Record a latency sample
+     */
+    fun recordLatency(latencyMs: Long) {
+        // Add to samples
+        latencySamples.add(latencyMs)
+        
+        // Keep only recent samples
+        while (latencySamples.size > MAX_LATENCY_SAMPLES) {
+            latencySamples.poll()
+        }
+        
+        // Calculate average
+        val samples = latencySamples.toList()
+        averageLatencyMs = if (samples.isNotEmpty()) {
+            samples.sum() / samples.size
+        } else {
+            0
+        }
+        
+        determineQuality()
+    }
+    
+    /**
+     * Record a request result (success or error)
+     */
+    fun recordRequestResult(success: Boolean) {
+        errorSamples.add(!success)
+        
+        while (errorSamples.size > MAX_ERROR_SAMPLES) {
+            errorSamples.poll()
+        }
+        
+        val samples = errorSamples.toList()
+        errorRate = if (samples.isNotEmpty()) {
+            samples.count { it }.toFloat() / samples.size
+        } else {
+            0f
+        }
+        
+        determineQuality()
+    }
+    
+    /**
+     * Determine connection quality based on all factors
+     */
+    private fun determineQuality() {
+        val quality = when {
+            !_isConnected.value -> Quality.UNKNOWN
+            
+            // Check error rate first
+            errorRate > 0.5f -> Quality.POOR
+            errorRate > 0.25f -> Quality.FAIR
+            
+            // Check latency
+            averageLatencyMs > 0 -> when {
+                averageLatencyMs <= EXCELLENT_LATENCY_MS -> Quality.EXCELLENT
+                averageLatencyMs <= GOOD_LATENCY_MS -> Quality.GOOD
+                averageLatencyMs <= FAIR_LATENCY_MS -> Quality.FAIR
+                else -> Quality.POOR
+            }
+            
+            // Fall back to bandwidth-based estimation
+            estimatedBandwidthKbps >= EXCELLENT_BANDWIDTH_KBPS -> Quality.EXCELLENT
+            estimatedBandwidthKbps >= GOOD_BANDWIDTH_KBPS -> Quality.GOOD
+            estimatedBandwidthKbps >= FAIR_BANDWIDTH_KBPS -> Quality.FAIR
+            estimatedBandwidthKbps > 0 -> Quality.POOR
+            
+            else -> Quality.UNKNOWN
+        }
+        
+        if (_quality.value != quality) {
+            Log.d(TAG, "Quality changed: ${_quality.value} -> $quality " +
+                "(latency: ${averageLatencyMs}ms, bandwidth: ${estimatedBandwidthKbps}kbps, errorRate: $errorRate)")
+            _quality.value = quality
+        }
+    }
+    
+    /**
+     * Get recommended timeout multiplier based on quality
+     */
+    fun getTimeoutMultiplier(): Float {
+        return when (_quality.value) {
+            Quality.EXCELLENT -> 1.0f
+            Quality.GOOD -> 1.2f
+            Quality.FAIR -> 1.5f
+            Quality.POOR -> 2.0f
+            Quality.UNKNOWN -> 1.5f
+        }
+    }
+    
+    /**
+     * Get recommended retry policy based on quality
+     */
+    fun getRetryPolicy(): RetryPolicy {
+        return when (_quality.value) {
+            Quality.EXCELLENT, Quality.GOOD -> RetryPolicy.forWifi()
+            Quality.FAIR, Quality.POOR, Quality.UNKNOWN -> RetryPolicy.forMobileNetwork()
+        }
+    }
+    
+    /**
+     * Get adaptive timeout configuration
+     */
+    fun getTimeouts(): TimeoutConfig {
+        val multiplier = getTimeoutMultiplier()
+        return TimeoutConfig(
+            connectTimeoutMs = (CONNECT_TIMEOUT_MS * multiplier).toLong(),
+            subscribeTimeoutMs = (SUBSCRIBE_TIMEOUT_MS * multiplier).toLong(),
+            pushTimeoutMs = (PUSH_TIMEOUT_MS * multiplier).toLong(),
+            readTimeoutMs = (READ_TIMEOUT_MS * multiplier).toLong(),
+            writeTimeoutMs = (WRITE_TIMEOUT_MS * multiplier).toLong()
+        )
+    }
+    
+    /**
+     * Get quality report for diagnostics
+     */
+    fun getQualityReport(): QualityReport {
+        return QualityReport(
+            quality = _quality.value,
+            isConnected = _isConnected.value,
+            networkType = _networkType.value,
+            averageLatencyMs = averageLatencyMs,
+            estimatedBandwidthKbps = estimatedBandwidthKbps,
+            errorRate = errorRate,
+            sampleCount = latencySamples.size,
+            timeoutMultiplier = getTimeoutMultiplier()
+        )
+    }
+    
+    /**
+     * Log network diagnostics
+     */
+    fun logNetworkDiagnostics() {
+        val report = getQualityReport()
+        Log.d(TAG, "=== NETWORK DIAGNOSTICS ===")
+        Log.d(TAG, "  Quality: ${report.quality}")
+        Log.d(TAG, "  Connected: ${report.isConnected}")
+        Log.d(TAG, "  Network Type: ${report.networkType}")
+        Log.d(TAG, "  Average Latency: ${report.averageLatencyMs}ms")
+        Log.d(TAG, "  Est. Bandwidth: ${report.estimatedBandwidthKbps}kbps")
+        Log.d(TAG, "  Error Rate: ${(report.errorRate * 100).toInt()}%")
+        Log.d(TAG, "  Timeout Multiplier: ${report.timeoutMultiplier}x")
+    }
+    
+    data class TimeoutConfig(
+        val connectTimeoutMs: Long,
+        val subscribeTimeoutMs: Long,
+        val pushTimeoutMs: Long,
+        val readTimeoutMs: Long,
+        val writeTimeoutMs: Long
+    )
+    
+    data class QualityReport(
+        val quality: Quality,
+        val isConnected: Boolean,
+        val networkType: NetworkDiagnostics.NetworkType,
+        val averageLatencyMs: Long,
+        val estimatedBandwidthKbps: Int,
+        val errorRate: Float,
+        val sampleCount: Int,
+        val timeoutMultiplier: Float
+    )
+}

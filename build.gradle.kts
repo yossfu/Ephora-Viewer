@@ -356,8 +356,8 @@ dependencies {
     // Kotlin support
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.21")
     implementation("org.jetbrains.kotlin:kotlin-reflect:2.2.21")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     
     // Back-compat libs
@@ -471,7 +471,7 @@ dependencies {
     // — without this, Mockito throws "Cannot mock/spy: final class".
     testImplementation("org.mockito:mockito-inline:4.11.0")
     testImplementation("org.mockito.kotlin:mockito-kotlin:4.1.0")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("com.squareup.okhttp3:okhttp:4.12.0")  // For integration tests
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.json:json:20240303")

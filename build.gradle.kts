@@ -4,10 +4,10 @@ import org.gradle.api.tasks.testing.Test
 
 plugins {
     id("com.android.application") version "8.6.1"
-    id("org.jetbrains.kotlin.android") version "2.2.21"
+    id("org.jetbrains.kotlin.android") version "2.4.20"
     id("org.jetbrains.kotlin.plugin.parcelize") version "2.4.20"
-    id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.2.21"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.20"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.4.20"
     // NOTE: Paparazzi's Gradle plugin (`app.cash.paparazzi`) is intentionally
     // *not* applied here. The project's production classpath bundles
     // `org.conscrypt:conscrypt-android` whose AAR ships an `org.conscrypt.R`
@@ -354,8 +354,8 @@ dependencies {
     // implementation("lindenlab:llsd:1.0")
     
     // Kotlin support
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.21")
-    implementation("org.jetbrains.kotlin:kotlin-reflect:2.2.21")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.20")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:2.4.20")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")

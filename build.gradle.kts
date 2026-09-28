@@ -498,7 +498,7 @@ dependencies {
     // this Robolectric crashes during AndroidTestEnvironment.setUpApplicationState.
     testImplementation("org.conscrypt:conscrypt-openjdk-uber:2.5.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test:core-ktx:1.5.0")
 }

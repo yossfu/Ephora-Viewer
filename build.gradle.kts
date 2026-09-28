@@ -487,7 +487,7 @@ dependencies {
     testImplementation("androidx.test:core-ktx:1.5.0")
     testImplementation("androidx.test:runner:1.5.2")
     testImplementation("androidx.test:rules:1.5.0")
-    testImplementation("androidx.test.ext:junit-ktx:1.1.5")
+    testImplementation("androidx.test.ext:junit-ktx:1.3.0")
     // Turbine for testing Flow / StateFlow emissions in Robolectric tests.
     testImplementation("app.cash.turbine:turbine:1.0.0")
     // Robolectric needs Conscrypt's OpenJDK-flavoured native library — the
@@ -497,7 +497,7 @@ dependencies {
     // bundles the same provider compiled against the host JVM. Without
     // this Robolectric crashes during AndroidTestEnvironment.setUpApplicationState.
     testImplementation("org.conscrypt:conscrypt-openjdk-uber:2.5.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test:core-ktx:1.5.0")

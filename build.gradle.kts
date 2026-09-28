@@ -434,10 +434,10 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     
     // Filament Rendering Engine
-    implementation("com.google.android.filament:filament-android:1.66.0")
-    implementation("com.google.android.filament:filament-utils-android:1.66.0")
-    implementation("com.google.android.filament:gltfio-android:1.66.0")
-    implementation("com.google.android.filament:filamat-android:1.66.0")
+    implementation("com.google.android.filament:filament-android:1.77.1")
+    implementation("com.google.android.filament:filament-utils-android:1.77.1")
+    implementation("com.google.android.filament:gltfio-android:1.77.1")
+    implementation("com.google.android.filament:filamat-android:1.77.1")
     
     // AndroidX XR support (for future Android XR devices)
     // These are placeholders - actual XR libraries will be available when Android XR releases

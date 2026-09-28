@@ -483,7 +483,7 @@ dependencies {
     // `src/test` can exercise Android-touching code without a device.
     // Pinned to 4.11.x — versions 4.12+ require JVM target 11; this project
     // is still on JVM 1.8.
-    testImplementation("org.robolectric:robolectric:4.11.1")
+    testImplementation("org.robolectric:robolectric:4.17")
     testImplementation("androidx.test:core-ktx:1.5.0")
     testImplementation("androidx.test:runner:1.5.2")
     testImplementation("androidx.test:rules:1.5.0")

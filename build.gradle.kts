@@ -419,7 +419,7 @@ dependencies {
     natives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86_64")
     
     // KTX - Kotlin extensions for libGDX
-    val ktxVersion = "1.12.1-rc1"
+    val ktxVersion = "1.13.1-rc1"
     implementation("io.github.libktx:ktx-app:$ktxVersion")           // Application utilities
     implementation("io.github.libktx:ktx-async:$ktxVersion")         // Coroutines support
     implementation("io.github.libktx:ktx-collections:$ktxVersion")   // Collection extensions

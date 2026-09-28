@@ -345,7 +345,7 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
     
     // Audio processing
-    implementation("androidx.media:media:1.7.0")
+    implementation("androidx.media:media:1.8.0")
     
     // Voice Chat (WebRTC)
     implementation("io.getstream:stream-webrtc-android:1.2.2")

@@ -410,7 +410,7 @@ dependencies {
     implementation("io.github.sceneview:sceneview:2.2.1")
     
     // libGDX - Cross-platform game engine for game logic and input handling
-    val gdxVersion = "1.12.1"
+    val gdxVersion = "1.14.2"
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
     natives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-armeabi-v7a")

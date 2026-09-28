@@ -305,7 +305,7 @@ dependencies {
     // Google Play Services
     implementation("com.google.android.gms:play-services-drive:17.0.0")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
-    implementation("com.google.android.gms:play-services-base:18.5.0")
+    implementation("com.google.android.gms:play-services-base:18.11.0")
     
     // Networking - OkHttp
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

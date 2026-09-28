@@ -334,9 +334,9 @@ dependencies {
     implementation("org.chromium.net:cronet-embedded:119.6045.31")
     
     // gRPC - Modern networking based on official SL app patterns
-    implementation("io.grpc:grpc-okhttp:1.62.2")
-    implementation("io.grpc:grpc-protobuf-lite:1.62.2")
-    implementation("io.grpc:grpc-stub:1.62.2")
+    implementation("io.grpc:grpc-okhttp:1.84.0")
+    implementation("io.grpc:grpc-protobuf-lite:1.84.0")
+    implementation("io.grpc:grpc-stub:1.84.0")
     implementation("io.grpc:grpc-kotlin-stub:1.4.1")
     implementation("com.google.protobuf:protobuf-kotlin-lite:3.25.3")
     

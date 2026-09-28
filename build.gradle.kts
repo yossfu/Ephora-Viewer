@@ -337,7 +337,7 @@ dependencies {
     implementation("io.grpc:grpc-okhttp:1.84.0")
     implementation("io.grpc:grpc-protobuf-lite:1.84.0")
     implementation("io.grpc:grpc-stub:1.84.0")
-    implementation("io.grpc:grpc-kotlin-stub:1.4.1")
+    implementation("io.grpc:grpc-kotlin-stub:1.5.0")
     implementation("com.google.protobuf:protobuf-kotlin-lite:3.25.3")
     
     // Retrofit for REST API fallback

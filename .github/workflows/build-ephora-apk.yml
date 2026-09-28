@@ -28,7 +28,7 @@ jobs:
       - run: ./gradlew assembleDebug --stacktrace
         env:
           GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4g"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Ephora-debug-APK
           path: '**/build/outputs/apk/debug/*.apk'

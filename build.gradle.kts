@@ -308,8 +308,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-base:18.5.0")
     
     // Networking - OkHttp
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:5.5.0")
 
     // Conscrypt — required for reliable HTTP/2 ALPN negotiation on Android.
     // Without it, OkHttp's H2 upgrade silently falls back to HTTP/1.1 on
@@ -472,8 +472,8 @@ dependencies {
     testImplementation("org.mockito:mockito-inline:4.11.0")
     testImplementation("org.mockito.kotlin:mockito-kotlin:4.1.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    testImplementation("com.squareup.okhttp3:okhttp:4.12.0")  // For integration tests
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp:5.5.0")  // For integration tests
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.5.0")
     testImplementation("org.json:json:20240303")
     testImplementation("app.cash.paparazzi:paparazzi:1.3.5")
 

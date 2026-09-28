@@ -319,7 +319,7 @@ dependencies {
     // ships Cysharp.Net.Http.YetAnotherHttpHandler for the same reason —
     // platform HTTP/2 isn't reliable. Conscrypt installs a hardened
     // BoringSSL-backed security provider so ALPN works correctly.
-    implementation("org.conscrypt:conscrypt-android:2.5.2")
+    implementation("org.conscrypt:conscrypt-android:2.7.0")
 
     // Cronet — Chromium's HTTP stack with HTTP/3 (QUIC) support. Used as
     // the primary asset transport with OkHttp+Conscrypt as fallback.
@@ -496,7 +496,7 @@ dependencies {
     // on the unit-test classpath with `conscrypt-openjdk-uber`, which
     // bundles the same provider compiled against the host JVM. Without
     // this Robolectric crashes during AndroidTestEnvironment.setUpApplicationState.
-    testImplementation("org.conscrypt:conscrypt-openjdk-uber:2.5.2")
+    testImplementation("org.conscrypt:conscrypt-openjdk-uber:2.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

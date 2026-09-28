@@ -407,7 +407,7 @@ dependencies {
     // See com.linkpoint.scripts.lsl package for complete LSL language support with 350+ functions
     
     // SceneView - Compose wrapper for Filament 3D/AR rendering
-    implementation("io.github.sceneview:sceneview:2.2.1")
+    implementation("io.github.sceneview:sceneview:4.39.0")
     
     // libGDX - Cross-platform game engine for game logic and input handling
     val gdxVersion = "1.12.1"

@@ -358,7 +358,7 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect:2.2.21")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     
     // Back-compat libs
     implementation("androidx.legacy:legacy-support-v4:1.0.0")

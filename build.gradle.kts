@@ -382,7 +382,7 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.7")
     
     // Jetpack Compose
-    val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
+    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
     

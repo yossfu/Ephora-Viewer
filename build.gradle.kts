@@ -459,8 +459,8 @@ dependencies {
     // ReliableTransportPolicyTest). Bundled assertions/Test annotations
     // delegate to JUnit 4 underneath so the existing junit:junit
     // dependency keeps the test runner unchanged.
-    testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.22")
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:1.9.22")
+    testImplementation("org.jetbrains.kotlin:kotlin-test:2.4.20")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.4.20")
     // Pinned to mockito 4.x — newer mockito 5.x is JVM 11 only and the project
     // still targets Java 1.8.
     testImplementation("org.mockito:mockito-core:4.11.0")

@@ -4,7 +4,7 @@ import org.gradle.api.tasks.testing.Test
 
 plugins {
     id("com.android.application") version "8.6.1"
-    id("org.jetbrains.kotlin.android") version "2.2.21"
+    id("org.jetbrains.kotlin.android") version "2.4.20"
     id("org.jetbrains.kotlin.plugin.parcelize") version "2.2.21"
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
     id("org.jetbrains.kotlin.plugin.serialization") version "2.2.21"

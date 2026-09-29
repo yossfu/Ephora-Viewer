@@ -1,0 +1,113 @@
+package com.linkpoint.render.lumiya.core
+
+import org.junit.runner.RunWith
+import androidx.test.ext.junit.runners.AndroidJUnit4
+
+import android.content.Context
+import android.view.Surface
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.mockito.kotlin.mock
+
+@RunWith(AndroidJUnit4::class)
+class RenderEngineSwitcherTest {
+
+    @Test
+    fun `switch from filament to lumiya initializes new engine and renders frames`() {
+        // Both Context and Surface are passed through opaquely to the
+        // FakeRenderEngine, so mocks suffice. `SurfaceTexture(int)` is a
+        // native call that fails on the JVM unit test classpath.
+        val context: Context = mock()
+        val surface: Surface = mock()
+        val switcher = RenderEngineSwitcher(context)
+        val filamentEngine = FakeRenderEngine("Filament")
+        val lumiyaEngine = FakeRenderEngine("Lumiya")
+
+        switcher.registerEngine(RenderEngineSwitcher.EngineType.FILAMENT, filamentEngine)
+        switcher.registerEngine(RenderEngineSwitcher.EngineType.LUMIYA, lumiyaEngine)
+        // Explicit FILAMENT-first start. The default backend was flipped
+        // to LUMIYA when the OpenGL ES path took over as primary; this
+        // test exists specifically to exercise the switch back, so it
+        // pins the starting engine before initialize().
+        switcher.setActiveEngine(RenderEngineSwitcher.EngineType.FILAMENT)
+
+        assertTrue(switcher.initialize(surface, 640, 480))
+        assertEquals(1, filamentEngine.initializeCalls)
+
+        switcher.setActiveEngine(RenderEngineSwitcher.EngineType.LUMIYA)
+        switcher.renderFrame()
+
+        val activeEngine = switcher.getActiveEngine()
+        assertNotNull(activeEngine)
+        assertEquals(RenderEngineSwitcher.EngineType.LUMIYA, switcher.getActiveType())
+        assertEquals(1, lumiyaEngine.initializeCalls)
+        assertEquals(1L, lumiyaEngine.frameCount)
+    }
+
+    private class FakeRenderEngine(
+        override val engineName: String,
+        private val shouldInitialize: Boolean = true
+    ) : RenderEngineProvider {
+
+        override var isInitialized: Boolean = false
+            private set
+        override var viewportWidth: Int = 0
+            private set
+        override var viewportHeight: Int = 0
+            private set
+        override var frameCount: Long = 0L
+            private set
+
+        var initializeCalls: Int = 0
+            private set
+
+        override fun initialize(context: Context, surface: Surface, width: Int, height: Int): Boolean {
+            initializeCalls += 1
+            if (!shouldInitialize) {
+                isInitialized = false
+                return false
+            }
+            viewportWidth = width
+            viewportHeight = height
+            isInitialized = true
+            return true
+        }
+
+        override fun onSurfaceChanged(width: Int, height: Int) {
+            viewportWidth = width
+            viewportHeight = height
+        }
+
+        override fun onSurfaceDestroyed() {
+            isInitialized = false
+        }
+
+        override fun renderFrame() {
+            if (isInitialized) {
+                frameCount += 1
+            }
+        }
+
+        override fun shutdown() {
+            isInitialized = false
+        }
+
+        override fun setCameraPosition(x: Float, y: Float, z: Float) = Unit
+
+        override fun setCameraTarget(x: Float, y: Float, z: Float) = Unit
+
+        override fun setFieldOfView(fovDegrees: Float) = Unit
+
+        override fun setDrawDistance(distance: Float) = Unit
+
+        override fun addObject(id: Long, posX: Float, posY: Float, posZ: Float) = Unit
+
+        override fun removeObject(id: Long) = Unit
+
+        override fun updateTerrain(heightmap: FloatArray, width: Int, depth: Int) = Unit
+
+        override fun clearScene() = Unit
+    }
+}

@@ -1,0 +1,35 @@
+name: Build Linkpoint APK
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+concurrency:
+  group: linkpoint-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
+            cmake;3.22.1
+            ndk;26.3.11579264
+      - run: chmod +x gradlew
+      - run: ./gradlew assembleStableDebug --stacktrace
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4g"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Linkpoint-debug-APK
+          path: '**/build/outputs/apk/**/*.apk'

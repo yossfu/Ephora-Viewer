@@ -278,13 +278,14 @@ private fun Int.toInventoryType(): InventoryType = when (this) {
     1 -> InventoryType.SOUND
     2 -> InventoryType.CALLING_CARD
     3 -> InventoryType.LANDMARK
-    5 -> InventoryType.CLOTHING
     6 -> InventoryType.OBJECT
     7 -> InventoryType.NOTECARD
-    8 -> InventoryType.BODYPART
     10 -> InventoryType.SCRIPT
-    19 -> InventoryType.LINK
+    15 -> InventoryType.TEXTURE
+    18 -> InventoryType.CLOTHING
+    19 -> InventoryType.ANIMATION
     20 -> InventoryType.GESTURE
+    24 -> InventoryType.LINK
     else -> InventoryType.UNKNOWN
 }
 

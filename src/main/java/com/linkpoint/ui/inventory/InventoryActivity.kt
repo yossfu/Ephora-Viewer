@@ -42,7 +42,7 @@ class InventoryActivity : AppCompatActivity() {
     private lateinit var breadcrumbText: TextView
     private lateinit var emptyText: TextView
     
-    private val inventoryStack = mutableListOf<ActivityInventoryFolder>()
+    private val inventoryStack = mutableListOf<InventoryFolder>()
     private val currentItems = mutableListOf<ActivityInventoryItem>()
     private lateinit var adapter: ActivityInventoryAdapter
     
@@ -74,7 +74,7 @@ class InventoryActivity : AppCompatActivity() {
     }
     
     private fun loadRootInventory() {
-        val rootId = inventoryManager.getSystemFolder(
+        val rootId = app.inventoryManager.getSystemFolder(
             com.linkpoint.inventory.InventoryManager.FOLDER_TYPE_ROOT
         )
 
@@ -86,13 +86,13 @@ class InventoryActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val ok = inventoryManager.fetchFolderContents(rootId, fetchFolders = true, fetchItems = true)
+                val ok = app.inventoryManager.fetchFolderContents(rootId, fetchFolders = true, fetchItems = true)
                 if (!ok) {
                     emptyText.visibility = View.VISIBLE
                     emptyText.text = "Could not load your Second Life inventory."
                     return@launch
                 }
-                val root = inventoryManager.getFolder(rootId)
+                val root = app.inventoryManager.getFolder(rootId)
                 if (root == null) {
                     emptyText.visibility = View.VISIBLE
                     emptyText.text = "Second Life root inventory folder was not received."
@@ -112,10 +112,10 @@ class InventoryActivity : AppCompatActivity() {
         updateBreadcrumb()
         currentItems.clear()
 
-        inventoryManager.getFolders(folder.folderId).forEach { child ->
+        app.inventoryManager.getFolders(folder.folderId).forEach { child ->
             currentItems.add(ActivityInventoryItem.folder(child.folderId, child.name, child.parentId))
         }
-        inventoryManager.getItems(folder.folderId).forEach { item ->
+        app.inventoryManager.getItems(folder.folderId).forEach { item ->
             currentItems.add(item.toActivityItem())
         }
 
@@ -127,12 +127,12 @@ class InventoryActivity : AppCompatActivity() {
     private fun openFolder(folderId: UUID) {
         lifecycleScope.launch {
             try {
-                val ok = inventoryManager.fetchFolderContents(folderId, fetchFolders = true, fetchItems = true)
+                val ok = app.inventoryManager.fetchFolderContents(folderId, fetchFolders = true, fetchItems = true)
                 if (!ok) {
                     Toast.makeText(this@InventoryActivity, "Could not load folder contents.", Toast.LENGTH_SHORT).show()
                     return@launch
                 }
-                val folder = inventoryManager.getFolder(folderId)
+                val folder = app.inventoryManager.getFolder(folderId)
                 if (folder == null) {
                     Toast.makeText(this@InventoryActivity, "Folder data was not received.", Toast.LENGTH_SHORT).show()
                     return@launch

@@ -898,23 +898,49 @@ class UDPConnectionFixed(
             NetworkLogger.log(
                 NetworkLogger.Level.INFO,
                 NetworkLogger.Category.UDP,
-                "UseCircuitCode ACKed - sending CompleteAgentMovement (circuit layer)"
+                "UseCircuitCode ACKed - restoring proven Lumiya bootstrap sequence"
             )
 
-            // Initial-login ordering is deliberate:
-            //   UseCircuitCode -> CompleteAgentMovement -> UuidNameRequest
-            //   -> RegionHandshake -> RegionHandshakeReply -> AgentUpdate
+            // The uploaded working APK establishes the circuit with this
+            // sequence after the UseCircuitCode ACK:
             //
-            // Do NOT start AgentUpdate or AgentThrottle here. The simulator
-            // has not completed the region bootstrap yet, and the documented
-            // login flow starts the initial AgentUpdate only after the
-            // RegionHandshakeReply. Keeping this boundary strict also prevents
-            // background keep-alive code from flooding the pre-handshake circuit.
+            //   CompleteAgentMovement
+            //   AgentThrottle
+            //   AgentDataUpdateRequest
+            //   periodic AgentUpdate (first tick after ~200 ms)
+            //
+            // Do not gate AgentUpdate on AgentMovementComplete. The proven
+            // implementation starts its periodic movement loop as soon as the
+            // circuit is accepted, while RegionHandshake/ObjectUpdate traffic
+            // arrives asynchronously from the simulator.
             sendCompleteAgentMovement()
 
-            // Traditional login-path request. It is not required by every
-            // simulator, but it is part of the established SL login sequence
-            // and provides a lightweight post-CAM application-level probe.
+            // Match the working APK's exact initial throttle budget.
+            sendAgentThrottle(
+                resend = 10_000f,
+                land = 4_000f,
+                wind = 0f,
+                cloud = 0f,
+                task = 100_000f,
+                texture = 100_000f,
+                asset = 50_000f
+            )
+
+            // Lightweight simulator-side request used by the working client
+            // immediately after CAM. It is not a keep-alive and is not used as
+            // a replacement for RegionHandshake.
+            sendAgentDataUpdateRequest()
+
+            // The reference APK starts periodic AgentUpdate traffic ~200 ms
+            // after the circuit is established. Preserve that timing while
+            // keeping the send method itself gated on CompleteAgentMovement.
+            scope.launch {
+                delay(200L)
+                if (_isConnected.value && completeAgentMovementSent.get()) {
+                    startAgentUpdates()
+                }
+            }
+
             try {
                 sendUUIDNameRequest(listOf(agentId))
             } catch (e: Exception) {
@@ -928,7 +954,7 @@ class UDPConnectionFixed(
             NetworkLogger.log(
                 NetworkLogger.Level.ERROR,
                 NetworkLogger.Category.UDP,
-                "CompleteAgentMovement send failed: " + (e.message ?: e.javaClass.simpleName)
+                "Lumiya bootstrap sequence failed: " + (e.message ?: e.javaClass.simpleName)
             )
         }
     }

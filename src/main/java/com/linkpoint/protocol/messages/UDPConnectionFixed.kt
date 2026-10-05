@@ -2518,6 +2518,14 @@ class UDPConnectionFixed(
         if (!_isConnected.value) {
             return
         }
+
+        // Movement traffic is forbidden until the simulator has accepted the
+        // circuit and CompleteAgentMovement has been queued. This hard gate
+        // protects the handshake from background services that may call
+        // sendAgentUpdate() as a generic keep-alive.
+        if (!completeAgentMovementSent.get()) {
+            return
+        }
         
         // AgentUpdate is High Frequency 4, NotTrusted, Zerocoded.
         //

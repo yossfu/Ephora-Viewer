@@ -19,7 +19,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -450,7 +449,6 @@ class HUDOverlayView @JvmOverloads constructor(
         super.onDetachedFromWindow()
         managerRevisionJob?.cancel()
         managerRevisionJob = null
-        managerRevisionScope.cancel()
         textureRequestJobs.values.forEach { it.cancel() }
         textureRequestJobs.clear()
         textureCache.clear()

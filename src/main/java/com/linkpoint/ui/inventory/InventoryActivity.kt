@@ -14,6 +14,8 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import com.linkpoint.LinkpointApp
+import com.linkpoint.inventory.InventoryFolder
+import com.linkpoint.inventory.InventoryItem
 import com.linkpoint.R
 import com.linkpoint.teleport.TeleportResult
 import java.util.UUID
@@ -72,47 +74,77 @@ class InventoryActivity : AppCompatActivity() {
     }
     
     private fun loadRootInventory() {
-        // Load root inventory folders (simulated)
-        val rootFolder = ActivityInventoryFolder(
-            id = UUID.randomUUID(),
-            name = "My Inventory",
-            parentId = null
+        val rootId = inventoryManager.getSystemFolder(
+            com.linkpoint.inventory.InventoryManager.FOLDER_TYPE_ROOT
         )
-        inventoryStack.clear()
-        inventoryStack.add(rootFolder)
-        
-        loadFolderContents(rootFolder)
-    }
-    
-    private fun loadFolderContents(folder: ActivityInventoryFolder) {
-        updateBreadcrumb()
-        
-        currentItems.clear()
-        
-        // Simulated inventory structure
-        if (folder.name == "My Inventory") {
-            currentItems.addAll(listOf(
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Animations", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Body Parts", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Calling Cards", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Clothing", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Gestures", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Landmarks", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Lost and Found", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Notecards", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Objects", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Photo Album", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Scripts", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Sounds", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Textures", folder.id),
-                ActivityInventoryItem.folder(UUID.randomUUID(), "Trash", folder.id)
-            ))
+
+        if (rootId == null) {
+            emptyText.visibility = View.VISIBLE
+            emptyText.text = "Second Life inventory is not available yet."
+            return
         }
-        
+
+        lifecycleScope.launch {
+            try {
+                val ok = inventoryManager.fetchFolderContents(rootId, fetchFolders = true, fetchItems = true)
+                if (!ok) {
+                    emptyText.visibility = View.VISIBLE
+                    emptyText.text = "Could not load your Second Life inventory."
+                    return@launch
+                }
+                val root = inventoryManager.getFolder(rootId)
+                if (root == null) {
+                    emptyText.visibility = View.VISIBLE
+                    emptyText.text = "Second Life root inventory folder was not received."
+                    return@launch
+                }
+                inventoryStack.clear()
+                inventoryStack.add(root)
+                loadFolderContents(root)
+            } catch (e: Exception) {
+                emptyText.visibility = View.VISIBLE
+                emptyText.text = "Inventory error: ${e.message ?: "unknown error"}"
+            }
+        }
+    }
+
+    private fun loadFolderContents(folder: InventoryFolder) {
+        updateBreadcrumb()
+        currentItems.clear()
+
+        inventoryManager.getFolders(folder.folderId).forEach { child ->
+            currentItems.add(ActivityInventoryItem.folder(child.folderId, child.name, child.parentId))
+        }
+        inventoryManager.getItems(folder.folderId).forEach { item ->
+            currentItems.add(item.toActivityItem())
+        }
+
         emptyText.visibility = if (currentItems.isEmpty()) View.VISIBLE else View.GONE
+        emptyText.text = if (currentItems.isEmpty()) "This folder is empty." else ""
         adapter.notifyDataSetChanged()
     }
-    
+
+    private fun openFolder(folderId: UUID) {
+        lifecycleScope.launch {
+            try {
+                val ok = inventoryManager.fetchFolderContents(folderId, fetchFolders = true, fetchItems = true)
+                if (!ok) {
+                    Toast.makeText(this@InventoryActivity, "Could not load folder contents.", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                val folder = inventoryManager.getFolder(folderId)
+                if (folder == null) {
+                    Toast.makeText(this@InventoryActivity, "Folder data was not received.", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                inventoryStack.add(folder)
+                loadFolderContents(folder)
+            } catch (e: Exception) {
+                Toast.makeText(this@InventoryActivity, "Inventory error: ${e.message ?: "unknown error"}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     private fun updateBreadcrumb() {
         breadcrumbText.text = inventoryStack.joinToString(" > ") { it.name }
     }
@@ -120,9 +152,7 @@ class InventoryActivity : AppCompatActivity() {
     private fun onItemClicked(item: ActivityInventoryItem) {
         when (item.type) {
             InventoryType.FOLDER -> {
-                val folder = ActivityInventoryFolder(item.id, item.name, item.parentId)
-                inventoryStack.add(folder)
-                loadFolderContents(folder)
+                openFolder(item.id)
             }
             InventoryType.NOTECARD -> {
                 // Open notecard editor
@@ -233,6 +263,30 @@ data class ActivityInventoryFolder(
     val name: String,
     val parentId: UUID?
 )
+
+private fun InventoryItem.toActivityItem(): ActivityInventoryItem = ActivityInventoryItem(
+    id = itemId,
+    name = name,
+    parentId = parentId,
+    type = inventoryType.toInventoryType(),
+    assetId = assetId.takeUnless { it == UUID(0L, 0L) },
+    creatorId = permissions.creatorId
+)
+
+private fun Int.toInventoryType(): InventoryType = when (this) {
+    0 -> InventoryType.TEXTURE
+    1 -> InventoryType.SOUND
+    2 -> InventoryType.CALLING_CARD
+    3 -> InventoryType.LANDMARK
+    5 -> InventoryType.CLOTHING
+    6 -> InventoryType.OBJECT
+    7 -> InventoryType.NOTECARD
+    8 -> InventoryType.BODYPART
+    10 -> InventoryType.SCRIPT
+    19 -> InventoryType.LINK
+    20 -> InventoryType.GESTURE
+    else -> InventoryType.UNKNOWN
+}
 
 data class ActivityInventoryItem(
     val id: UUID,

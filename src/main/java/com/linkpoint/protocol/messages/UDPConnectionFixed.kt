@@ -1329,29 +1329,14 @@ class UDPConnectionFixed(
                 // runs without waiting for the select timeout when traffic exists.
                 drainOutgoingQueueOnIOThread()
 
-                // BLOCKING select on THIS thread (not on CircuitDispatcher!)
-                // This is the key fix: the select() call blocks only the I/O thread,
-                // leaving the rest of the app free.
-                val readyKeys = localSelector.select(SELECTOR_TIMEOUT_MS)
-                selectorWakeupCount.incrementAndGet()
-                if (readyKeys > 0) {
-                    selectorReadyKeyCount.addAndGet(readyKeys.toLong())
-                }
+                // Android NIO can report a connected DatagramChannel as readable
+                // inconsistently across device/network combinations. The previous selector
+                // path could remain at readyKeys=0 while outbound UDP continued normally.
+                // Poll the connected channel directly on this dedicated I/O thread.
+                buffer.clear()
+                val bytesRead = localChannel.read(buffer)
+                if (bytesRead > 0) {
 
-                if (readyKeys > 0) {
-                    val iterator = localSelector.selectedKeys().iterator()
-                    while (iterator.hasNext()) {
-                        val selKey = iterator.next()
-                        iterator.remove()
-
-                        if (selKey.isReadable) {
-                            selectorReadableKeyCount.incrementAndGet()
-                            buffer.clear()
-
-                            // BLOCKING read on THIS thread
-                            val bytesRead = localChannel.read(buffer)
-
-                            if (bytesRead > 0) {
                                 packetsReceived.incrementAndGet()
                                 postReconnectPacketsReceived.incrementAndGet()
                                 bytesReceived.addAndGet(bytesRead.toLong())
@@ -1505,8 +1490,12 @@ class UDPConnectionFixed(
                                     // directly from the circuit's receive processing, not queued.
                                     dispatchMessageDirect(messageId, data)
                                 }
-                            }
-                        }
+                            
+                } else {
+                    try {
+                        Thread.sleep(25L)
+                    } catch (ie: InterruptedException) {
+                        Thread.currentThread().interrupt()
                     }
                 }
 

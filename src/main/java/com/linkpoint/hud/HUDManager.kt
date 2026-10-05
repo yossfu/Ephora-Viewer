@@ -169,7 +169,7 @@ class HUDManager(
         hudsByPoint.getOrPut(hudObject.attachmentPoint) { mutableListOf() }.add(hudObject)
 
         Log.d(TAG, "Registered real SL HUD: ${hudObject.name} at ${getAttachmentPointName(hudObject.attachmentPoint)}")
-        Log.d(TAG, "Registered HUD: ${hudObject.name} at ${getAttachmentPointName(attachmentPoint)}")
+        notifyChanged()
     }
     
     /**
@@ -184,6 +184,7 @@ class HUDManager(
         }
         
         Log.d(TAG, "Unregistered HUD: ${hud.name}")
+        notifyChanged()
     }
     
     /**
@@ -211,6 +212,7 @@ class HUDManager(
     fun setHUDsVisible(visible: Boolean) {
         _hudsVisible.value = visible
         Log.d(TAG, "HUDs visibility: $visible")
+        notifyChanged()
     }
     
     /**
@@ -218,6 +220,7 @@ class HUDManager(
      */
     fun toggleHUDsVisibility() {
         _hudsVisible.value = !_hudsVisible.value
+        notifyChanged()
     }
     
     /**
@@ -272,6 +275,7 @@ class HUDManager(
         val deviceLayouts = layoutConfig.layouts.getOrPut(deviceClass) { mutableMapOf() }
         val orientationLayouts = deviceLayouts.getOrPut(orientation) { mutableMapOf() }
         orientationLayouts[attachmentPoint] = entry
+        notifyChanged()
     }
 
     /**
@@ -283,6 +287,7 @@ class HUDManager(
         layoutConfig.layouts[deviceClass]
             ?.get(orientation)
             ?.remove(attachmentPoint)
+        notifyChanged()
     }
 
     /**
@@ -353,6 +358,7 @@ class HUDManager(
         if (scale != null) {
             hud.scale = scale
         }
+        notifyChanged()
     }
     
     /**

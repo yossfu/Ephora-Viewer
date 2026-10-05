@@ -127,8 +127,8 @@ class WorldViewActivity : AppCompatActivity(), NavigationView.OnNavigationItemSe
     private val app by lazy { LinkpointApp.getInstance() }
     @Volatile private var isRendering = false
     @Volatile private var isSurfaceReady = false
-    // OpenGL ES 3 (Lumiya pipeline) is the primary path. Filament remains as
-    // an opt-in fallback gated behind the renderer_backend preference.
+    // Filament is the primary Ephora renderer. Lumiya/OpenGL remains available
+    // as an explicit compatibility backend during the parity migration.
     private var useSecondaryRenderer: Boolean = true
     private var hudsVisibleFromManager: Boolean = true
     private var isLayoutEditorMode: Boolean = false

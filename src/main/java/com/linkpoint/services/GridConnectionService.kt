@@ -128,11 +128,14 @@ class GridConnectionService : Service() {
     
     private suspend fun sendKeepAlive() {
         if (app.sessionManager.isConnected()) {
-            // Send UDP keep-alive to simulator
+            // Keep-alive uses the dedicated LLUDP ping message. AgentUpdate is
+            // reserved for the active movement/camera stream.
             try {
-                // Send AgentUpdate message as keep-alive
-                app.udpConnection.sendAgentUpdate()
-                Log.d(TAG, "Sending keep-alive")
+                if (!app.udpConnection.isCircuitHandshakeComplete()) {
+                    return
+                }
+                app.udpConnection.sendStartPingCheck()
+                Log.d(TAG, "Sending StartPingCheck keep-alive")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to send keep-alive", e)
             }

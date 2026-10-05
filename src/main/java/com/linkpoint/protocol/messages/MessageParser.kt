@@ -722,6 +722,14 @@ data class ObjectUpdateData(
     val regionHandle: Long = 0L,  // For computing global position
     val extraParams: ByteArray = ByteArray(0),  // Extra params containing mesh/sculpt data
     /**
+     * Attachment point encoded in the ObjectUpdate State byte.
+     *
+     * Second Life uses bit 7 as the APPEND attachment flag; the lower
+     * seven bits identify the actual attachment point. Zero means a normal
+     * world object rather than an avatar attachment.
+     */
+    val attachmentPoint: Int = 0,
+    /**
      * Path/profile shape parameters from the ObjectUpdate. Drives real prim
      * geometry instead of the previous hardcoded box. Defaulted so the
      * compressed/cached/terse paths (which don't carry these bytes inline)

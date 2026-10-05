@@ -2527,8 +2527,15 @@ class UDPConnectionFixed(
     }
     
     /**
-     * Send AgentUpdate message
-     * Mobile-optimized: 10 updates/sec to balance responsiveness and battery
+     * Send AgentUpdate message.
+     *
+     * LLUUID is 16 bytes. LLQuaternion is transmitted on the LLUDP wire as
+     * THREE floats (x,y,z); the simulator reconstructs w from the unit
+     * quaternion constraint. This is 12 bytes per quaternion on the wire,
+     * even though a quaternion is held as four floats in memory.
+     *
+     * Initial login uses this only after RegionHandshakeReply. The periodic
+     * movement stream may then reuse the same packet format.
      */
     fun sendAgentUpdate(reliable: Boolean = false) {
         val identity = outboundIdentity("UDPConnectionFixed.sendAgentUpdate")
@@ -2536,49 +2543,39 @@ class UDPConnectionFixed(
             return
         }
 
-        // Movement traffic is forbidden until the simulator has accepted the
-        // circuit and CompleteAgentMovement has been queued. This hard gate
-        // protects the handshake from background services that may call
-        // sendAgentUpdate() as a generic keep-alive.
+        // Movement traffic is forbidden until CompleteAgentMovement has
+        // been queued for this accepted circuit.
         if (!completeAgentMovementSent.get()) {
             return
         }
-        
-        // AgentUpdate is High Frequency 4, NotTrusted, Zerocoded.
-        //
-        // Wire layout:
+
+        // Wire payload:
         // AgentID(16) + SessionID(16) +
-        // BodyRotation(LLQuaternion = 16) + HeadRotation(16) +
+        // BodyRotation quaternion(12) + HeadRotation quaternion(12) +
         // State(1) +
         // CameraCenter(12) + CameraAtAxis(12) +
         // CameraLeftAxis(12) + CameraUpAxis(12) +
-        // Far(4) + ControlFlags(4) + Flags(1) = 122 bytes.
+        // Far(4) + ControlFlags(4) + Flags(1) = 114 bytes.
         //
-        // The previous implementation wrote only 3 floats for each quaternion
-        // and did not set the ZEROCODED flag. That shifted every field after
-        // HeadRotation by 8 bytes and produced a structurally invalid
-        // AgentUpdate. The simulator could ACK the UDP packet but could not
-        // use it as a valid agent update, leaving the initial agent presence
-        // handshake without a valid camera/movement update.
-        val payload = ByteBuffer.allocate(122).order(ByteOrder.LITTLE_ENDIAN)
+        // The previous 245a6b version incorrectly used four floats per
+        // quaternion (122 bytes). LLQuaternion is a three-float wire type.
+        val payload = ByteBuffer.allocate(114).order(ByteOrder.LITTLE_ENDIAN)
 
-        // AgentID and SessionID
         payload.putUUID(identity.agentId)
         payload.putUUID(identity.sessionId)
 
-        // Identity body quaternion: x=0, y=0, z=0, w=1
+        // Identity body quaternion: x=0, y=0, z=0.
+        // The simulator reconstructs w=+1 for the unit quaternion.
         payload.putFloat(0f)
         payload.putFloat(0f)
         payload.putFloat(0f)
-        payload.putFloat(1f)
 
-        // Identity head quaternion: x=0, y=0, z=0, w=1
+        // Identity head quaternion.
         payload.putFloat(0f)
         payload.putFloat(0f)
         payload.putFloat(0f)
-        payload.putFloat(1f)
 
-        // State (0 = standing)
+        // State (0 = standing).
         payload.put(0.toByte())
 
         // Initial camera center in region-local coordinates.
@@ -2599,16 +2596,10 @@ class UDPConnectionFixed(
         payload.putFloat(0f)
         payload.putFloat(1f)
 
-        // Draw distance.
         payload.putFloat(128f)
-
-        // Control flags (0 = no movement).
         payload.putInt(0)
-
-        // Viewer flags (0 = AU_FLAGS_NONE).
         payload.put(0.toByte())
 
-        // AgentUpdate must be zero-coded on the wire.
         sendPacket(
             messageId = MessageIdRegistry.AGENT_UPDATE,
             payload = payload.array(),

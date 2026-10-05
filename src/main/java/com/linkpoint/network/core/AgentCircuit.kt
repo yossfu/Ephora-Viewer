@@ -42,18 +42,15 @@ class AgentCircuit(
 
     companion object {
         private const val TAG = "AgentCircuit"
-        private const val AGENT_UPDATE_INTERVAL_MS = 100L
     }
 
     private val _circuitState = MutableStateFlow(CircuitState.DISCONNECTED)
     val circuitState: StateFlow<CircuitState> = _circuitState.asStateFlow()
 
     private var isConnected: Boolean = false
-    private var agentUpdateJob: Job? = null
     private var stateListener: CircuitStateListener? = null
 
     private val udpConnection: UDPConnectionFixed = sharedConnection
-    private val lifecycleOwnerId = "AgentCircuit:${authReply.agentId}:${authReply.circuitCode}"
 
     private val messageRouter = udpConnection.getMessageRouter()
     private val sceneDataHandler = SceneDataHandler(sceneGraph, renderQueue)
@@ -168,8 +165,6 @@ class AgentCircuit(
 
     fun close() {
         isConnected = false
-        agentUpdateJob?.cancel()
-        udpConnection.releaseMovementLifecycle(lifecycleOwnerId)
         try {
             scope.launch {
                 EventBus.publish(ConnectionStateChangedEvent(ConnectionState.CONNECTED, ConnectionState.DISCONNECTED))

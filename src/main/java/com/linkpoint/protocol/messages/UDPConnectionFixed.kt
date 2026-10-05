@@ -2519,72 +2519,77 @@ class UDPConnectionFixed(
             return
         }
         
-        // AgentUpdate message format:
-        // - AgentID (16 bytes, UUID)
-        // - SessionID (16 bytes, UUID)
-        // - BodyRotation (12 bytes, quaternion)
-        // - HeadRotation (12 bytes, quaternion)
-        // - State (1 byte)
-        // - CameraCenter (12 bytes, Vector3)
-        // - CameraAtAxis (12 bytes, Vector3)
-        // - CameraLeftAxis (12 bytes, Vector3)
-        // - CameraUpAxis (12 bytes, Vector3)
-        // - Far (4 bytes, F32)
-        // - ControlFlags (4 bytes, U32)
-        // - Flags (1 byte)
-        val payload = ByteBuffer.allocate(114).order(ByteOrder.LITTLE_ENDIAN)
-        
+        // AgentUpdate is High Frequency 4, NotTrusted, Zerocoded.
+        //
+        // Wire layout:
+        // AgentID(16) + SessionID(16) +
+        // BodyRotation(LLQuaternion = 16) + HeadRotation(16) +
+        // State(1) +
+        // CameraCenter(12) + CameraAtAxis(12) +
+        // CameraLeftAxis(12) + CameraUpAxis(12) +
+        // Far(4) + ControlFlags(4) + Flags(1) = 122 bytes.
+        //
+        // The previous implementation wrote only 3 floats for each quaternion
+        // and did not set the ZEROCODED flag. That shifted every field after
+        // HeadRotation by 8 bytes and produced a structurally invalid
+        // AgentUpdate. The simulator could ACK the UDP packet but could not
+        // use it as a valid agent update, leaving the initial agent presence
+        // handshake without a valid camera/movement update.
+        val payload = ByteBuffer.allocate(122).order(ByteOrder.LITTLE_ENDIAN)
+
         // AgentID and SessionID
         payload.putUUID(identity.agentId)
         payload.putUUID(identity.sessionId)
-        
-        // Body rotation (identity quaternion: x=0, y=0, z=0, w computed by server)
+
+        // Identity body quaternion: x=0, y=0, z=0, w=1
         payload.putFloat(0f)
         payload.putFloat(0f)
         payload.putFloat(0f)
-        
-        // Head rotation (identity quaternion)
+        payload.putFloat(1f)
+
+        // Identity head quaternion: x=0, y=0, z=0, w=1
         payload.putFloat(0f)
         payload.putFloat(0f)
         payload.putFloat(0f)
-        
+        payload.putFloat(1f)
+
         // State (0 = standing)
         payload.put(0.toByte())
-        
-        // Camera center (default position)
+
+        // Initial camera center in region-local coordinates.
         payload.putFloat(128f)
         payload.putFloat(128f)
         payload.putFloat(25f)
-        
-        // Camera look-at direction (looking forward)
+
+        // Camera axes: X forward, Y left, Z up.
         payload.putFloat(1f)
         payload.putFloat(0f)
         payload.putFloat(0f)
-        
-        // Camera left axis
+
         payload.putFloat(0f)
-        payload.putFloat(-1f)
+        payload.putFloat(1f)
         payload.putFloat(0f)
-        
-        // Camera up axis
+
         payload.putFloat(0f)
         payload.putFloat(0f)
         payload.putFloat(1f)
-        
-        // Far distance
+
+        // Draw distance.
         payload.putFloat(128f)
-        
-        // Control flags (0 = no movement)
+
+        // Control flags (0 = no movement).
         payload.putInt(0)
-        
-        // Flags
+
+        // Viewer flags (0 = AU_FLAGS_NONE).
         payload.put(0.toByte())
-        
-        // Message ID for AgentUpdate (high frequency: 4)
-        val messageId = 4
-        
-        // Build packet with header (not reliable, sent frequently)
-        sendPacket(messageId, payload.array(), reliable = false)
+
+        // AgentUpdate must be zero-coded on the wire.
+        sendPacket(
+            messageId = MessageIdRegistry.AGENT_UPDATE,
+            payload = payload.array(),
+            reliable = false,
+            zerocoded = true
+        )
     }
     
     /**

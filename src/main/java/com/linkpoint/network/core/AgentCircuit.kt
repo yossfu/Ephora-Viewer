@@ -100,17 +100,37 @@ class AgentCircuit(
 
     private suspend fun establishCircuit() {
         NetworkLogger.log(NetworkLogger.Level.INFO, NetworkLogger.Category.UDP, "=== Starting Circuit Establishment ===")
-        transitionState(CircuitState.CONNECTING, "Starting connection")
-        NetworkLogger.log(
-            NetworkLogger.Level.INFO,
-            NetworkLogger.Category.UDP,
-            "Using shared connection (Lumiya-style) - skipping redundant UseCircuitCode"
-        )
+        transitionState(CircuitState.CONNECTING, "Waiting for shared UDP handshake")
+
+        // UDPConnectionFixed owns the real circuit handshake. AgentCircuit must
+        // not invent ACKed/READY states merely because the shared socket exists:
+        // UseCircuitCode -> PacketAck -> CompleteAgentMovement is the protocol
+        // gate before any AgentUpdate traffic is allowed.
+        val handshakeCompleted = withTimeoutOrNull(15_000L) {
+            while (isActive && udpConnection.isConnected.value && !udpConnection.isCircuitHandshakeComplete()) {
+                delay(50L)
+            }
+            udpConnection.isConnected.value && udpConnection.isCircuitHandshakeComplete()
+        } ?: false
+
+        if (!handshakeCompleted) {
+            val reason = if (!udpConnection.isConnected.value) {
+                "Shared UDP connection is no longer connected"
+            } else {
+                "Timed out waiting for UseCircuitCode ACK / CompleteAgentMovement"
+            }
+            transitionState(CircuitState.ERROR, reason)
+            stateListener?.onCircuitError(reason)
+            return
+        }
+
         isConnected = true
-        transitionState(CircuitState.USE_CIRCUIT_CODE_ACKED, "Shared connection")
-        transitionState(CircuitState.COMPLETE_AGENT_MOVEMENT_ACKED, "Shared connection")
-        transitionState(CircuitState.CIRCUIT_READY, "Ready (shared connection)")
-        startAgentUpdates()
+        transitionState(CircuitState.USE_CIRCUIT_CODE_ACKED, "UseCircuitCode acknowledged by simulator")
+        transitionState(CircuitState.COMPLETE_AGENT_MOVEMENT_ACKED, "CompleteAgentMovement sent by shared circuit")
+        transitionState(CircuitState.CIRCUIT_READY, "Shared circuit handshake complete")
+
+        // UDPConnectionFixed starts the AgentUpdate loop from the same
+        // handshake boundary. Do not start a second loop here.
     }
 
     private suspend fun registerSceneDataHandlers() {
@@ -132,29 +152,9 @@ class AgentCircuit(
         NetworkLogger.log(NetworkLogger.Level.DEBUG, NetworkLogger.Category.UDP, "Scene handlers registered on shared connection")
     }
 
-    private fun startAgentUpdates() {
-        val lifecycleAcquired = udpConnection.tryAcquireMovementLifecycle(lifecycleOwnerId)
-        if (!lifecycleAcquired) {
-            val currentOwner = udpConnection.getMovementLifecycleOwner()
-            NetworkLogger.log(
-                NetworkLogger.Level.WARN,
-                NetworkLogger.Category.UDP,
-                "Skipping AgentCircuit update loop; movement lifecycle already owned by $currentOwner"
-            )
-            return
-        }
-
-        agentUpdateJob = scope.launch {
-            while (isActive && isConnected) {
-                try {
-                    udpConnection.sendAgentUpdate()
-                    delay(AGENT_UPDATE_INTERVAL_MS)
-                } catch (e: Exception) {
-                    NetworkLogger.log(NetworkLogger.Level.ERROR, NetworkLogger.Category.UDP, "Agent update error: ${e.message}")
-                }
-            }
-        }
-    }
+    // AgentUpdate ownership lives in UDPConnectionFixed. Keeping a second
+    // scheduler here used to send AgentUpdate before UseCircuitCode was ACKed
+    // and could also create duplicate movement loops.
 
 
     fun getStatistics() = mapOf(

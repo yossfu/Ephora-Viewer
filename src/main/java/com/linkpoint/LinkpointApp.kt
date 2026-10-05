@@ -1634,6 +1634,21 @@ class LinkpointApp : Application() {
                     if (::objectManager.isInitialized) {
                         objectManager.handleObjectUpdate(update)
                     }
+
+                    // Real SL HUD attachments are identified by the attachment
+                    // point preserved from ObjectUpdate.State. Register them only
+                    // after ObjectManager has the complete SceneObject.
+                    if (::hudManager.isInitialized && ::objectManager.isInitialized) {
+                        val attachmentPoint = update.attachmentPoint and 0x7F
+                        if (hudManager.isHUDAttachmentPoint(attachmentPoint)) {
+                            objectManager.getObject(update.localId)?.let { sceneObject ->
+                                hudManager.registerHUD(sceneObject, attachmentPoint)
+                            }
+                        } else {
+                            hudManager.unregisterHUD(update.localId)
+                        }
+                    }
+
                     // Add object to scene for rendering using PrimRenderer
                     // PrimRenderer creates actual renderable meshes (box, sphere, etc.)
                     val objectSubmitted = publishRenderCommand(SceneRenderCommand.UpsertPrim(update))

@@ -104,6 +104,13 @@ class HUDManager(
     private val _focusedHud = MutableStateFlow<HUDObject?>(null)
     val focusedHud: StateFlow<HUDObject?> = _focusedHud
 
+    private val _revision = MutableStateFlow(0L)
+    val revision: StateFlow<Long> = _revision
+
+    private fun notifyChanged() {
+        _revision.value = _revision.value + 1L
+    }
+
     init {
         loadLayoutConfig()
     }

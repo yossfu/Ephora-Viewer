@@ -206,11 +206,17 @@ class ConnectionKeepAliveManager(
     
     private suspend fun sendPing() {
         try {
-            // Send standard AgentUpdate message for keep-alive
-            udpConnection.sendAgentUpdate()
-            
+            // Keep-alive is a transport concern, not an AgentUpdate movement packet.
+            // Do not emit movement before the simulator accepts the circuit.
+            if (!udpConnection.isCircuitHandshakeComplete()) {
+                Log.v(TAG, "Keep-alive deferred until UDP circuit handshake completes")
+                return
+            }
+
+            udpConnection.sendStartPingCheck()
+
             lastPingSentTime = System.currentTimeMillis()
-            Log.v(TAG, "Ping sent")
+            Log.v(TAG, "StartPingCheck keep-alive sent")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send ping", e)
         }

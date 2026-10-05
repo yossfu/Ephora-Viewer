@@ -956,6 +956,15 @@ class UDPConnectionFixed(
      */
     fun getCircuitCode(): Int = circuitCode
 
+    /**
+     * True only after the simulator has ACKed UseCircuitCode and the shared
+     * circuit layer has issued CompleteAgentMovement.
+     *
+     * Higher-level circuit state machines must use this gate instead of
+     * assuming that an open UDP socket means the SL circuit is established.
+     */
+    fun isCircuitHandshakeComplete(): Boolean = completeAgentMovementSent.get()
+
     private fun outboundIdentity(context: String): AgentIdentity =
         AgentIdentity(
             agentId = agentId,

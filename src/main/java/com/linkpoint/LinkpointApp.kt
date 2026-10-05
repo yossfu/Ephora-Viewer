@@ -666,12 +666,6 @@ class LinkpointApp : Application() {
     var agentId: UUID? = null
         private set
     
-    // Flag to track if CompleteAgentMovement has been sent.
-    // Per SL protocol: This must be sent immediately once UseCircuitCode is ACKed;
-    // the server won't send RegionHandshake until it receives CompleteAgentMovement.
-    // Using AtomicBoolean to prevent race conditions with concurrent PacketAck messages.
-    private val completeAgentMovementSent = AtomicBoolean(false)
-
     // True once AgentMovementComplete has been received for the current
     // circuit (the simulator confirmed the avatar is in-region). Latency-
     // sensitive bootstrap code (UseCircuitCode, CompleteAgentMovement,
@@ -961,7 +955,6 @@ class LinkpointApp : Application() {
         this.agentId = agentId
         
         // Reset connection state tracking for new session
-        completeAgentMovementSent.set(false)
         _isAgentInWorld.value = false
 
         // Initialize friendsManager here since it requires agentId
@@ -1016,8 +1009,7 @@ class LinkpointApp : Application() {
                     // empty even though the socket is healthy and ping/ack
                     // traffic is flowing — the symptom in the 2026-05-03
                     // debug report (Reconnect Count: 3, Total Objects: 0).
-                    completeAgentMovementSent.set(false)
-                }
+                            }
                 UDPConnectionFixed.NetworkStateTransition.CONNECTED -> {
                     Log.i(TAG, "✓ UDP watchdog: CONNECTED (socket reconnect succeeded)")
                     protocol.stateManager.setStatus(
@@ -1983,65 +1975,9 @@ class LinkpointApp : Application() {
             }
         }
         
-        // PacketAck - Acknowledgment messages for reliable packets.
-        // These are sent by the simulator to confirm receipt of our reliable packets.
-        // CRITICAL: When UseCircuitCode is acknowledged, we MUST immediately send
-        // CompleteAgentMovement - the simulator won't send RegionHandshake until then.
-        udpConnection.registerHandler(com.linkpoint.protocol.messages.ids.MessageIdRegistry.PACKET_ACK) { _, rawPacket ->
-            // PacketAck format: Count (1 byte), then list of acknowledged sequence numbers (4 bytes each)
-            try {
-                val payload = com.linkpoint.protocol.messages.MessageParser.extractPayload(rawPacket)
-                if (payload == null) return@registerHandler
-                val buffer = java.nio.ByteBuffer.wrap(payload).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-                val count = buffer.get().toInt() and 0xFF
-
-                // Match the ACK list against the exact sequence number we used for
-                // UseCircuitCode, not a hardcoded value. Lumiya sends UseCircuitCode
-                // with the counter's first increment (seq=1), and any reconnect uses
-                // a larger number — so we must match on what the sender recorded.
-                val useCircuitCodeSeq = udpConnection.useCircuitCodeSequence
-                val ackedSequences = mutableListOf<Int>()
-                var containsUseCircuitCodeAck = false
-                for (i in 0 until count) {
-                    if (buffer.remaining() >= 4) {
-                        val seq = buffer.int
-                        ackedSequences.add(seq)
-                        if (useCircuitCodeSeq >= 0 && seq == useCircuitCodeSeq) {
-                            containsUseCircuitCodeAck = true
-                        }
-                    }
-                }
-
-                Log.d(TAG, "PacketAck received: $count packets acknowledged - sequences: $ackedSequences")
-
-                if (containsUseCircuitCodeAck && completeAgentMovementSent.compareAndSet(false, true)) {
-                    Log.i(TAG, "╔══════════════════════════════════════════════════════════════════")
-                    Log.i(TAG, "║ ⭐ UseCircuitCode ACKNOWLEDGED - Sending CompleteAgentMovement")
-                    Log.i(TAG, "╚══════════════════════════════════════════════════════════════════")
-
-                    // CRITICAL FIX: Send CompleteAgentMovement DIRECTLY from the I/O thread.
-                    // Previously this was wrapped in applicationScope.launch which added latency
-                    // and could fail if the dispatcher was starved. The send methods are now
-                    // non-suspend and thread-safe, matching Lumiya's synchronous approach.
-                    try {
-                        udpConnection.sendCompleteAgentMovement()
-                        Log.i(TAG, "✓ CompleteAgentMovement SENT - server should now send RegionHandshake")
-
-                        // Send AgentThrottle adapted to the current network
-                        // band; a desktop-default throttle saturates cellular
-                        // links and starves chat/IM/group traffic.
-                        applyAdaptiveAgentThrottle(force = true)
-                        ensureAdaptiveThrottleObserver()
-                        try { udpConnection.startAgentUpdates() } catch (e: Exception) { android.util.Log.e(TAG, "early AgentUpdate start failed: " + (e.message ?: "unknown")) }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "✗ Error sending CompleteAgentMovement/AgentThrottle", e)
-                        completeAgentMovementSent.set(false)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling PacketAck", e)
-            }
-        }
+        // PacketAck is owned exclusively by UDPConnectionFixed. Its internal
+        // handler clears the reliable-send queue and advances the circuit
+        // handshake, preventing duplicate CompleteAgentMovement sends.
         
         // SoundTrigger - Sound triggered by in-world scripts (llTriggerSound)
         // These are sent when a script plays a sound that should be heard by nearby avatars.
@@ -5815,7 +5751,6 @@ class LinkpointApp : Application() {
         EventQueueDispatcher.shutdown()
         
         // Reset connection state tracking
-        completeAgentMovementSent.set(false)
         _isAgentInWorld.value = false
 
         udpConnection.disconnect()

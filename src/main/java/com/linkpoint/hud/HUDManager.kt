@@ -142,19 +142,26 @@ class HUDManager(
             return
         }
         
+        // Re-registering the same local ID is common while an attachment
+        // receives subsequent ObjectUpdate packets. Remove the previous
+        // registration first so the same HUD cannot appear multiple times.
+        allHuds.remove(sceneObject.localId)?.let { previous ->
+            hudsByPoint[previous.attachmentPoint]?.removeIf { it.localId == sceneObject.localId }
+        }
+
         val hudObject = HUDObject(
             localId = sceneObject.localId,
             fullId = sceneObject.fullId,
-            attachmentPoint = attachmentPoint,
+            attachmentPoint = attachmentPoint and 0x7F,
             position = sceneObject.position,
             scale = sceneObject.scale,
             name = sceneObject.name.ifEmpty { "HUD" }
         )
-        
-        // Add to tracking maps
+
         allHuds[sceneObject.localId] = hudObject
-        hudsByPoint.getOrPut(attachmentPoint) { mutableListOf() }.add(hudObject)
-        
+        hudsByPoint.getOrPut(hudObject.attachmentPoint) { mutableListOf() }.add(hudObject)
+
+        Log.d(TAG, "Registered real SL HUD: ${hudObject.name} at ${getAttachmentPointName(hudObject.attachmentPoint)}")
         Log.d(TAG, "Registered HUD: ${hudObject.name} at ${getAttachmentPointName(attachmentPoint)}")
     }
     

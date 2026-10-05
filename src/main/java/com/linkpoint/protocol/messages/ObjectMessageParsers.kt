@@ -102,7 +102,8 @@ internal object ObjectMessageParsers {
     private fun parseObjectBlock(buffer: ByteBuffer, regionHandle: Long): ObjectUpdateData? {
         return try {
             val localId = buffer.int
-            buffer.get()
+            val state = buffer.get().toInt() and 0xFF
+            val attachmentPoint = state and 0x7F
             val fullId = buffer.readUuid()
             validateObjectIds(localId, fullId)?.let {
                 markRejected(it)
@@ -171,7 +172,8 @@ internal object ObjectMessageParsers {
                 localId, fullId, parentId, position, rotation, velocity, scale, pcode, material,
                 clickAction, updateFlags, textureEntry, text, textColor, mediaUrl, soundId, ownerId,
                 gain, soundFlags, soundRadius, jointType, jointPivot, jointAxisOrAnchor,
-                String(nameValueBytes, Charsets.UTF_8), regionHandle, extraParams, shapeParams
+                String(nameValueBytes, Charsets.UTF_8), regionHandle, extraParams, shapeParams,
+                attachmentPoint
             )
         } catch (e: Exception) {
             markRejected(RejectReason.EXCEPTION)
@@ -194,7 +196,9 @@ internal object ObjectMessageParsers {
                 return null
             }
             val pcode = cb.get().toInt() and 0xFF
-            cb.get(); cb.int
+            val state = cb.get().toInt() and 0xFF
+            val attachmentPoint = state and 0x7F
+            cb.int
             val material = cb.get().toInt() and 0xFF
             val clickAction = cb.get().toInt() and 0xFF
             val scale = ByteArray(12).also(cb::get).let(LLVector3::fromBytes)
@@ -221,7 +225,8 @@ internal object ObjectMessageParsers {
                 mediaUrl = "",
                 ownerId = ownerId,
                 nameValue = "",
-                regionHandle = regionHandle
+                regionHandle = regionHandle,
+                attachmentPoint = attachmentPoint
             )
         } catch (e: Exception) {
             markRejected(RejectReason.EXCEPTION)

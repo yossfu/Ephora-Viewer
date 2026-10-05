@@ -1060,17 +1060,66 @@ class SLConnection(
         sendRegionHandshakeReply()
     }
 
+    /**
+     * Resolves the simulator object that represents this viewer's own avatar.
+     * ObjectUpdate and AgentMovementComplete are asynchronous and can arrive in
+     * either order, so this lookup must not depend on movement-complete having
+     * already been observed.
+     */
+    private fun ownAvatarObject(): SceneObject? {
+        val currentLocal = world.agentLocalId
+        if (currentLocal >= 0) {
+            val current = world.get(currentLocal)
+            if (current?.isAvatar == true && agentId.isNotEmpty() && current.uuid == agentId) {
+                return current
+            }
+        }
+
+        if (agentId.isEmpty()) {
+            return null
+        }
+
+        var found: SceneObject? = null
+        world.forEach { sceneObject ->
+            if (found == null && sceneObject.isAvatar && sceneObject.uuid == agentId) {
+                found = sceneObject
+            }
+        }
+        found?.let {
+            world.agentLocalId = it.localId
+            log("Avatar propio detectado: id local " + it.localId)
+        }
+        return found
+    }
+
     private fun handleAgentMovementComplete(message: SLMessage) {
         val data = message.firstBlock("Data") ?: return
-        val position = data.vector3("Position")
+        val movementCompletePosition = data.vector3("Position")
+
+        // AgentMovementComplete is the simulator's login/movement notification,
+        // but the own-avatar ObjectUpdate is the authoritative world object
+        // position when it is already available. Keeping that position prevents
+        // the camera from being seeded to a stale corner and then "jumping" to
+        // the real avatar position on the first movement update.
+        val mine = ownAvatarObject()
+        val effectivePosition = if (mine?.positionKnown == true) {
+            mine.position
+        } else {
+            movementCompletePosition
+        }
+
         sessionFlow.value = sessionFlow.value.copy(
-            position = position,
+            position = effectivePosition,
             positionKnown = true
         )
-        world.agentPosition = position
+        world.agentPosition = effectivePosition
         world.agentPositionKnown = true
-        MovementAudit.noteMovementComplete(position)
-        log("Posicion inicial: " + position)
+        MovementAudit.noteMovementComplete(movementCompletePosition)
+        log("Posicion inicial: " + movementCompletePosition)
+        if (mine?.positionKnown == true) {
+            MovementAudit.noteOwnObject(mine.localId, effectivePosition)
+            log("Posicion inicial confirmada por avatar: " + effectivePosition)
+        }
         // We are finally standing in the region, so this is the moment the
         // simulator will answer RetrieveInstantMessages.
         sendRetrieveInstantMessages()
@@ -1078,32 +1127,24 @@ class SLConnection(
 
     /** Once our own avatar object shows up, follow its real position. */
     private fun adoptAgentObject() {
-        if (world.agentLocalId < 0) {
-            var found = -1
-            world.forEach { sceneObject ->
-                if (found < 0 && sceneObject.isAvatar && agentId.isNotEmpty() && sceneObject.uuid == agentId) {
-                    found = sceneObject.localId
-                }
-            }
-            if (found >= 0) {
-                world.agentLocalId = found
-                log("Avatar propio detectado: id local " + found)
-            }
-        }
-        val local = world.agentLocalId
-        if (local < 0) {
+        val mine = ownAvatarObject() ?: return
+        if (!mine.positionKnown) {
             return
         }
-        val mine = world.get(local) ?: return
-        if (mine.positionKnown && MovementAudit.movementCompleteCount > 0) {
-            world.agentPosition = mine.position
-            world.agentPositionKnown = true
-            sessionFlow.value = sessionFlow.value.copy(position = mine.position, positionKnown = true)
-            // The audit's link 4: our own object was seen, and here is where it
-            // is. Whether this number ever changes is what separates "the
-            // simulator is not moving us" from "nothing local follows us".
-            MovementAudit.noteOwnObject(local, mine.position)
-        }
+
+        // The own avatar object is the authoritative in-world position. Do not
+        // gate this on AgentMovementComplete: the packet order is not guaranteed,
+        // and the object may be fully known first.
+        world.agentPosition = mine.position
+        world.agentPositionKnown = true
+        sessionFlow.value = sessionFlow.value.copy(
+            position = mine.position,
+            positionKnown = true
+        )
+        // The audit's link 4: our own object was seen, and here is where it
+        // is. Whether this number ever changes is what separates "the
+        // simulator is not moving us" from "nothing local follows us".
+        MovementAudit.noteOwnObject(mine.localId, mine.position)
     }
 
     private fun handleLayerData(message: SLMessage) {

@@ -1442,6 +1442,14 @@ class LinkpointApp : Application() {
                             "Waiting for world data"
                         )
                         Log.i(TAG, "✓ RegionHandshakeReply SENT - world data should start loading")
+                        try {
+                            applyAdaptiveAgentThrottle(force = true)
+                            ensureAdaptiveThrottleObserver()
+                            udpConnection.startAgentUpdates()
+                            Log.i(TAG, "✓ AgentUpdate loop started after RegionHandshakeReply")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to start post-handshake AgentUpdate/Throttle", e)
+                        }
                         ScenePopulationDiagnostics.markRegionHandshakeComplete()
                     } catch (e: Exception) {
                         com.linkpoint.utils.InitializationTracker.failPhase(
@@ -1506,8 +1514,7 @@ class LinkpointApp : Application() {
                     
                     // Update connection state to fully connected
                     sessionManager.setConnectionState(com.linkpoint.core.ConnectionState.CONNECTED)
-                    udpConnection.startAgentUpdates()
-                    Log.i(TAG, "✓ AgentUpdate loop started")
+                    // AgentUpdate starts only after RegionHandshakeReply.
                     
                     com.linkpoint.utils.InitializationTracker.completePhase(
                         com.linkpoint.utils.InitializationTracker.Phase.AGENT_MOVEMENT_COMPLETE,
@@ -1960,66 +1967,9 @@ class LinkpointApp : Application() {
             }
         }
         
-        // PacketAck - Acknowledgment messages for reliable packets.
-        // These are sent by the simulator to confirm receipt of our reliable packets.
-        // CRITICAL: When UseCircuitCode is acknowledged, we MUST immediately send
-        // CompleteAgentMovement - the simulator won't send RegionHandshake until then.
-        udpConnection.registerHandler(com.linkpoint.protocol.messages.ids.MessageIdRegistry.PACKET_ACK) { _, rawPacket ->
-            // PacketAck format: Count (1 byte), then list of acknowledged sequence numbers (4 bytes each)
-            try {
-                val payload = com.linkpoint.protocol.messages.MessageParser.extractPayload(rawPacket)
-                if (payload == null) return@registerHandler
-                val buffer = java.nio.ByteBuffer.wrap(payload).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-                val count = buffer.get().toInt() and 0xFF
-
-                // Match the ACK list against the exact sequence number we used for
-                // UseCircuitCode, not a hardcoded value. Lumiya sends UseCircuitCode
-                // with the counter's first increment (seq=1), and any reconnect uses
-                // a larger number — so we must match on what the sender recorded.
-                val useCircuitCodeSeq = udpConnection.useCircuitCodeSequence
-                val ackedSequences = mutableListOf<Int>()
-                var containsUseCircuitCodeAck = false
-                for (i in 0 until count) {
-                    if (buffer.remaining() >= 4) {
-                        val seq = buffer.int
-                        ackedSequences.add(seq)
-                        if (useCircuitCodeSeq >= 0 && seq == useCircuitCodeSeq) {
-                            containsUseCircuitCodeAck = true
-                        }
-                    }
-                }
-
-                Log.d(TAG, "PacketAck received: $count packets acknowledged - sequences: $ackedSequences")
-
-                if (containsUseCircuitCodeAck && completeAgentMovementSent.compareAndSet(false, true)) {
-                    Log.i(TAG, "╔══════════════════════════════════════════════════════════════════")
-                    Log.i(TAG, "║ ⭐ UseCircuitCode ACKNOWLEDGED - Sending CompleteAgentMovement")
-                    Log.i(TAG, "╚══════════════════════════════════════════════════════════════════")
-
-                    // CRITICAL FIX: Send CompleteAgentMovement DIRECTLY from the I/O thread.
-                    // Previously this was wrapped in applicationScope.launch which added latency
-                    // and could fail if the dispatcher was starved. The send methods are now
-                    // non-suspend and thread-safe, matching Lumiya's synchronous approach.
-                    try {
-                        udpConnection.sendCompleteAgentMovement()
-                        Log.i(TAG, "✓ CompleteAgentMovement SENT - server should now send RegionHandshake")
-
-                        // Send AgentThrottle adapted to the current network
-                        // band; a desktop-default throttle saturates cellular
-                        // links and starves chat/IM/group traffic.
-                        applyAdaptiveAgentThrottle(force = true)
-                        ensureAdaptiveThrottleObserver()
-                        try { udpConnection.startAgentUpdates() } catch (e: Exception) { android.util.Log.e(TAG, "early AgentUpdate start failed: " + (e.message ?: "unknown")) }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "✗ Error sending CompleteAgentMovement/AgentThrottle", e)
-                        completeAgentMovementSent.set(false)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling PacketAck", e)
-            }
-        }
-        
+        // PacketAck bootstrap handling lives in UDPConnectionFixed.
+        // There is intentionally no second app-layer owner for
+        // UseCircuitCode -> CompleteAgentMovement.
         // SoundTrigger - Sound triggered by in-world scripts (llTriggerSound)
         // These are sent when a script plays a sound that should be heard by nearby avatars.
         // We register a handler to prevent "No handler registered" warnings.

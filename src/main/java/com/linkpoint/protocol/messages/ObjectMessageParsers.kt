@@ -172,8 +172,7 @@ internal object ObjectMessageParsers {
                 localId, fullId, parentId, position, rotation, velocity, scale, pcode, material,
                 clickAction, updateFlags, textureEntry, text, textColor, mediaUrl, soundId, ownerId,
                 gain, soundFlags, soundRadius, jointType, jointPivot, jointAxisOrAnchor,
-                String(nameValueBytes, Charsets.UTF_8), regionHandle, extraParams, shapeParams,
-                attachmentPoint
+                String(nameValueBytes, Charsets.UTF_8), regionHandle, extraParams, attachmentPoint, shapeParams
             )
         } catch (e: Exception) {
             markRejected(RejectReason.EXCEPTION)

@@ -2690,8 +2690,8 @@ class UDPConnectionFixed(
         payload.putUUID(identity.sessionId)
         payload.putInt(identity.circuitCode ?: 0)
 
-        // Throttle block
-        payload.putInt(1) // GenCounter
+        // Throttle block. Lumiya initializes GenCounter to 0.
+        payload.putInt(0)
         payload.put(28.toByte()) // Variable 1 length prefix for Throttles
         payload.putFloat(resend)
         payload.putFloat(land)
@@ -2702,7 +2702,35 @@ class UDPConnectionFixed(
         payload.putFloat(asset)
 
         Log.d(TAG, "Sending AgentThrottle")
-        sendPacket(MessageIdRegistry.AGENT_THROTTLE, payload.array(), reliable = true)
+        // AgentThrottle is explicitly Zerocoded in the message template.
+        sendPacket(
+            MessageIdRegistry.AGENT_THROTTLE,
+            payload.array(),
+            reliable = true,
+            zerocoded = true
+        )
+    }
+    
+    /**
+     * Send AgentDataUpdateRequest.
+     *
+     * Lumiya sends this lightweight request during circuit bootstrap to ask
+     * the simulator for agent-specific data without modifying the agent.
+     * Template: Low 386, NotTrusted, Unencoded; AgentID + SessionID only.
+     */
+    fun sendAgentDataUpdateRequest() {
+        val identity = outboundIdentity("UDPConnectionFixed.sendAgentDataUpdateRequest")
+        val payload = ByteBuffer.allocate(32).order(ByteOrder.LITTLE_ENDIAN)
+        payload.putUUID(identity.agentId)
+        payload.putUUID(identity.sessionId)
+
+        Log.d(TAG, "Sending AgentDataUpdateRequest")
+        sendPacket(
+            MessageIdRegistry.AGENT_DATA_UPDATE_REQUEST,
+            payload.array(),
+            reliable = false,
+            zerocoded = false
+        )
     }
     
     /**

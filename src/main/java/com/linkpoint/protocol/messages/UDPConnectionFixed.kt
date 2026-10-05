@@ -895,24 +895,41 @@ class UDPConnectionFixed(
      */
     private fun onUseCircuitCodeAcked() {
         try {
-            NetworkLogger.log(NetworkLogger.Level.INFO, NetworkLogger.Category.UDP,
-                "UseCircuitCode ACKed - sending CompleteAgentMovement (circuit layer)")
+            NetworkLogger.log(
+                NetworkLogger.Level.INFO,
+                NetworkLogger.Category.UDP,
+                "UseCircuitCode ACKed - sending CompleteAgentMovement (circuit layer)"
+            )
+
+            // Initial-login ordering is deliberate:
+            //   UseCircuitCode -> CompleteAgentMovement -> UuidNameRequest
+            //   -> RegionHandshake -> RegionHandshakeReply -> AgentUpdate
+            //
+            // Do NOT start AgentUpdate or AgentThrottle here. The simulator
+            // has not completed the region bootstrap yet, and the documented
+            // login flow starts the initial AgentUpdate only after the
+            // RegionHandshakeReply. Keeping this boundary strict also prevents
+            // background keep-alive code from flooding the pre-handshake circuit.
             sendCompleteAgentMovement()
+
+            // Traditional login-path request. It is not required by every
+            // simulator, but it is part of the established SL login sequence
+            // and provides a lightweight post-CAM application-level probe.
             try {
-                sendAgentThrottle()
+                sendUUIDNameRequest(listOf(agentId))
             } catch (e: Exception) {
-                NetworkLogger.log(NetworkLogger.Level.WARN, NetworkLogger.Category.UDP,
-                    "AgentThrottle send failed: " + (e.message ?: e.javaClass.simpleName))
-            }
-            try {
-                startAgentUpdates()
-            } catch (e: Exception) {
-                NetworkLogger.log(NetworkLogger.Level.WARN, NetworkLogger.Category.UDP,
-                    "AgentUpdate start failed: " + (e.message ?: e.javaClass.simpleName))
+                NetworkLogger.log(
+                    NetworkLogger.Level.WARN,
+                    NetworkLogger.Category.UDP,
+                    "UuidNameRequest send failed: " + (e.message ?: e.javaClass.simpleName)
+                )
             }
         } catch (e: Exception) {
-            NetworkLogger.log(NetworkLogger.Level.ERROR, NetworkLogger.Category.UDP,
-                "CompleteAgentMovement send failed: " + (e.message ?: e.javaClass.simpleName))
+            NetworkLogger.log(
+                NetworkLogger.Level.ERROR,
+                NetworkLogger.Category.UDP,
+                "CompleteAgentMovement send failed: " + (e.message ?: e.javaClass.simpleName)
+            )
         }
     }
     
@@ -2513,7 +2530,7 @@ class UDPConnectionFixed(
      * Send AgentUpdate message
      * Mobile-optimized: 10 updates/sec to balance responsiveness and battery
      */
-    fun sendAgentUpdate() {
+    fun sendAgentUpdate(reliable: Boolean = false) {
         val identity = outboundIdentity("UDPConnectionFixed.sendAgentUpdate")
         if (!_isConnected.value) {
             return
@@ -2595,7 +2612,7 @@ class UDPConnectionFixed(
         sendPacket(
             messageId = MessageIdRegistry.AGENT_UPDATE,
             payload = payload.array(),
-            reliable = false,
+            reliable = reliable,
             zerocoded = true
         )
     }

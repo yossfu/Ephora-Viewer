@@ -941,15 +941,9 @@ class UDPConnectionFixed(
                 }
             }
 
-            try {
-                sendUUIDNameRequest(listOf(agentId))
-            } catch (e: Exception) {
-                NetworkLogger.log(
-                    NetworkLogger.Level.WARN,
-                    NetworkLogger.Category.UDP,
-                    "UuidNameRequest send failed: " + (e.message ?: e.javaClass.simpleName)
-                )
-            }
+            // Do not send UUIDNameRequest during the bootstrap. The working
+            // APK does not use it as a circuit-establishment step, and keeping
+            // the initial reliable queue small makes the startup deterministic.
         } catch (e: Exception) {
             NetworkLogger.log(
                 NetworkLogger.Level.ERROR,

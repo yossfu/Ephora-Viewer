@@ -1,4 +1,5 @@
 name: Build APK
+# Runner retry note: allocation can be delayed independently of the build.
 
 on:
   push:

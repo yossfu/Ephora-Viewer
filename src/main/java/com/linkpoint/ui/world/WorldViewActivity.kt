@@ -844,10 +844,10 @@ class WorldViewActivity : AppCompatActivity(), NavigationView.OnNavigationItemSe
 
     private fun preferredRendererBackend(): RendererHandoffManager.RendererBackend {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        // Primary renderer is OpenGL ES 3 (Lumiya pipeline). Honour the new
-        // renderer_backend key first, then fall back to the legacy boolean
-        // preference for users upgrading from the Filament-default era.
-        val backendPref = prefs.getString("renderer_backend", "opengl") ?: "opengl"
+        // Filament is the primary renderer for Ephora Viewer.
+        // The Lumiya/OpenGL path remains available explicitly as a
+        // compatibility backend while we complete parity migration.
+        val backendPref = prefs.getString("renderer_backend", "filament") ?: "filament"
         if (backendPref.equals("filament", ignoreCase = true)) {
             return RendererHandoffManager.RendererBackend.FILAMENT
         }
@@ -857,9 +857,10 @@ class WorldViewActivity : AppCompatActivity(), NavigationView.OnNavigationItemSe
         ) {
             return RendererHandoffManager.RendererBackend.LUMIYA
         }
-        // Legacy fallback: the old pref defaulted false=Filament. We invert
-        // semantics so an unset legacy install lands on OpenGL.
-        return if (prefs.getBoolean("enable_secondary_renderer", true)) {
+        // Legacy fallback: older installations used a boolean to opt into
+        // the secondary renderer. Keep explicit opt-in semantics; an unset
+        // preference therefore remains on Filament.
+        return if (prefs.getBoolean("enable_secondary_renderer", false)) {
             RendererHandoffManager.RendererBackend.LUMIYA
         } else {
             RendererHandoffManager.RendererBackend.FILAMENT

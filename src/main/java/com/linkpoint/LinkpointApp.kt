@@ -1434,6 +1434,18 @@ class LinkpointApp : Application() {
                             "Waiting for world data"
                         )
                         Log.i(TAG, "✓ RegionHandshakeReply SENT - world data should start loading")
+                        
+                        // The initial AgentUpdate belongs AFTER RegionHandshakeReply.
+                        // Send one immediately (reliably) to trigger the simulator's
+                        // interest-list/object stream. Continuous movement updates
+                        // are started only after AgentMovementComplete.
+                        try {
+                            udpConnection.sendAgentUpdate(reliable = true)
+                            Log.i(TAG, "✓ Initial AgentUpdate SENT after RegionHandshakeReply")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "✗ Initial AgentUpdate failed", e)
+                        }
+                        
                         ScenePopulationDiagnostics.markRegionHandshakeComplete()
                     } catch (e: Exception) {
                         com.linkpoint.utils.InitializationTracker.failPhase(
@@ -1498,8 +1510,20 @@ class LinkpointApp : Application() {
                     
                     // Update connection state to fully connected
                     sessionManager.setConnectionState(com.linkpoint.core.ConnectionState.CONNECTED)
+                    // Continuous AgentUpdate traffic starts only after the
+                    // simulator has explicitly confirmed AgentMovementComplete.
                     udpConnection.startAgentUpdates()
                     Log.i(TAG, "✓ AgentUpdate loop started")
+
+                    // Bandwidth throttling is a post-presence concern. Keep it
+                    // out of the initial circuit bootstrap so a malformed or
+                    // incompatible throttle cannot mask the login handshake.
+                    try {
+                        applyAdaptiveAgentThrottle(force = true)
+                        ensureAdaptiveThrottleObserver()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "AgentThrottle post-presence setup failed: " + (e.message ?: "unknown"))
+                    }
                     
                     com.linkpoint.utils.InitializationTracker.completePhase(
                         com.linkpoint.utils.InitializationTracker.Phase.AGENT_MOVEMENT_COMPLETE,

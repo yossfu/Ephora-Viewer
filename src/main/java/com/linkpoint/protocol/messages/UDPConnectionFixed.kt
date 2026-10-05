@@ -551,6 +551,12 @@ class UDPConnectionFixed(
      * Reset on every fresh connect().
      */
     private val completeAgentMovementSent = AtomicBoolean(false)
+
+    /**
+     * True only after RegionHandshakeReply has been queued. Until then the
+     * circuit is allowed to carry only bootstrap/control traffic.
+     */
+    private val worldBootstrapOpen = AtomicBoolean(false)
     
     /**
      * Internal callback info with timeout handling.
@@ -897,19 +903,9 @@ class UDPConnectionFixed(
         try {
             NetworkLogger.log(NetworkLogger.Level.INFO, NetworkLogger.Category.UDP,
                 "UseCircuitCode ACKed - sending CompleteAgentMovement (circuit layer)")
+            // Keep the first circuit transition minimal. Wait for the simulator
+            // to emit RegionHandshake before opening normal application traffic.
             sendCompleteAgentMovement()
-            try {
-                sendAgentThrottle()
-            } catch (e: Exception) {
-                NetworkLogger.log(NetworkLogger.Level.WARN, NetworkLogger.Category.UDP,
-                    "AgentThrottle send failed: " + (e.message ?: e.javaClass.simpleName))
-            }
-            try {
-                startAgentUpdates()
-            } catch (e: Exception) {
-                NetworkLogger.log(NetworkLogger.Level.WARN, NetworkLogger.Category.UDP,
-                    "AgentUpdate start failed: " + (e.message ?: e.javaClass.simpleName))
-            }
         } catch (e: Exception) {
             NetworkLogger.log(NetworkLogger.Level.ERROR, NetworkLogger.Category.UDP,
                 "CompleteAgentMovement send failed: " + (e.message ?: e.javaClass.simpleName))
@@ -1087,6 +1083,7 @@ class UDPConnectionFixed(
             pendingCallbacks.clear()            // Fresh circuit: allow the handshake latch to fire again and forget
             // the previous circuit's UseCircuitCode sequence.
             completeAgentMovementSent.set(false)
+            worldBootstrapOpen.set(false)
             useCircuitCodeSequence = -1
             recentInboundSequences.clear()
             
@@ -2607,7 +2604,16 @@ class UDPConnectionFixed(
         payload.putInt(flags)
         
         Log.d(TAG, "Sending RegionHandshakeReply")
-        sendPacket(MessageIdRegistry.REGION_HANDSHAKE_REPLY, payload.array(), reliable = true, zerocoded = true)
+        val sequence = sendPacket(
+            MessageIdRegistry.REGION_HANDSHAKE_REPLY,
+            payload.array(),
+            reliable = true,
+            zerocoded = true
+        )
+        if (sequence >= 0) {
+            worldBootstrapOpen.set(true)
+            Log.i(TAG, "RegionHandshakeReply queued successfully; world bootstrap gate OPEN")
+        }
     }
     
     /**
@@ -3213,6 +3219,30 @@ class UDPConnectionFixed(
         zerocoded: Boolean = false,
         listener: MessageEventListener? = null
     ): Int {
+        val bootstrapAllowed = when (messageId) {
+            MessageIdRegistry.USE_CIRCUIT_CODE,
+            MessageIdRegistry.COMPLETE_AGENT_MOVEMENT,
+            MessageIdRegistry.REGION_HANDSHAKE_REPLY,
+            MessageIdRegistry.PACKET_ACK,
+            MessageIdRegistry.COMPLETE_PING_CHECK,
+            MessageIdRegistry.LOGOUT_REQUEST,
+            MessageIdRegistry.CLOSE_CIRCUIT -> true
+            else -> worldBootstrapOpen.get()
+        }
+
+        if (!bootstrapAllowed) {
+            NetworkLogger.log(
+                NetworkLogger.Level.DEBUG,
+                NetworkLogger.Category.UDP,
+                "Bootstrap gate: deferring " +
+                    getMessageName(messageId) +
+                    " (0x" +
+                    MessageIdNameRegistry.formatHex(messageId) +
+                    ") until RegionHandshakeReply"
+            )
+            return -1
+        }
+
         if (!_isConnected.value) {
             NetworkLogger.log(NetworkLogger.Level.WARN, NetworkLogger.Category.UDP, "Cannot send: not connected")
             return -1

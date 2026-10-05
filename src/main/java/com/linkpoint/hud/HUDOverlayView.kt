@@ -15,8 +15,12 @@ import kotlin.math.min
 import com.linkpoint.LinkpointApp
 import com.linkpoint.assets.TexturePriority
 import com.linkpoint.protocol.types.LLVector3
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -43,7 +47,24 @@ class HUDOverlayView @JvmOverloads constructor(
     }
     
     var listener: HUDInteractionListener? = null
+
+    private var managerRevisionJob: Job? = null
+    private val managerRevisionScope =
+        CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+
     var hudManager: HUDManager? = null
+        set(value) {
+            field = value
+            managerRevisionJob?.cancel()
+            managerRevisionJob = value?.let { manager ->
+                managerRevisionScope.launch {
+                    manager.revision.collectLatest {
+                        postInvalidateOnAnimation()
+                    }
+                }
+            }
+            postInvalidateOnAnimation()
+        }
     
     // Drawing paints
     private val hudBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -179,34 +200,15 @@ class HUDOverlayView @JvmOverloads constructor(
             RectF(left, top, left + hudWidth, top + hudHeight)
         }
         
-        // Draw HUD background
-        canvas.drawRoundRect(rect, 8f, 8f, hudBackgroundPaint)
-        canvas.drawRoundRect(rect, 8f, 8f, hudBorderPaint)
-
-        // Try to load and draw the HUD texture; fall back to name label
+        // Render only real Second Life HUD texture data. While the asset
+        // is downloading, leave the area transparent instead of showing a
+        // fabricated label or placeholder panel.
         val textureId = hudManager?.getPrimaryTextureId(hud)
         if (textureId != null) {
             requestTexture(textureId)
-            val bitmap = textureCache[textureId]
-            if (bitmap != null) {
+            textureCache[textureId]?.let { bitmap ->
                 canvas.drawBitmap(bitmap, null, rect, hudTexturePaint)
-            } else {
-                // Texture not yet loaded - show name as placeholder
-                canvas.drawText(
-                    hud.name.take(15),
-                    rect.centerX(),
-                    rect.centerY() + hudTextPaint.textSize / 3,
-                    hudTextPaint
-                )
             }
-        } else {
-            // No texture available - show name as placeholder
-            canvas.drawText(
-                hud.name.take(15),
-                rect.centerX(),
-                rect.centerY() + hudTextPaint.textSize / 3,
-                hudTextPaint
-            )
         }
 
         if (hud.localId == activeHudId) {
@@ -446,6 +448,9 @@ class HUDOverlayView @JvmOverloads constructor(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        managerRevisionJob?.cancel()
+        managerRevisionJob = null
+        managerRevisionScope.cancel()
         textureRequestJobs.values.forEach { it.cancel() }
         textureRequestJobs.clear()
         textureCache.clear()

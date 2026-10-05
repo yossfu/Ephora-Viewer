@@ -1941,6 +1941,14 @@ class LinkpointApp : Application() {
                         if (::objectManager.isInitialized) {
                             // Get UUID before removal so we can remove from scene
                             val obj = objectManager.getObject(localId)
+
+                            // Attachments are local-scene objects too. Remove a
+                            // killed HUD from the HUD index before deleting its
+                            // SceneObject so stale touch/render bounds cannot remain.
+                            if (::hudManager.isInitialized) {
+                                hudManager.unregisterHUD(localId)
+                            }
+
                             objectManager.removeObject(localId)
                             if (::avatarManager.isInitialized) {
                                 avatarManager.removeAvatarByLocalId(localId)

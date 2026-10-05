@@ -1,7 +1,7 @@
 name: Build Linkpoint APK
 on:
   push:
-    branches: [ main ]
+    branches: [ main, ephora-lumiya-parity ]
   workflow_dispatch:
 concurrency:
   group: linkpoint-${{ github.ref }}

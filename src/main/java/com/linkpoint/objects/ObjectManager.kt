@@ -160,6 +160,7 @@ class ObjectManager(
         
         obj.apply {
             parentId = data.parentId
+            attachmentPoint = data.attachmentPoint
             position = data.position
             rotation = data.rotation
             velocity = data.velocity
@@ -1099,6 +1100,7 @@ data class SceneObject(
     var ownerId: UUID? = null,
     var groupID: UUID? = null,
     var parentId: Int = 0,
+    var attachmentPoint: Int = 0,
     var position: LLVector3 = LLVector3.zero(),
     var rotation: LLQuaternion = LLQuaternion.identity(),
     var velocity: LLVector3 = LLVector3.zero(),

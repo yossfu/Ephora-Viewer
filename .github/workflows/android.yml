@@ -1,0 +1,37 @@
+name: EPHORA APK
+on: { push: { branches: [main] }, workflow_dispatch: {} }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.0.12077973
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - name: SDK+NDK
+        run: |
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
+          echo "y" | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1"
+          if [ -f "$ANDROID_HOME/ndk/27.0.12077973/source.properties" ]; then
+            echo "NDK preinstalado OK, se reusa sin descargar"
+            export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973
+            echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+          else
+            for i in 1 2 3; do
+              echo "Intento NDK $i/3"
+              if sdkmanager "ndk;27.0.12077973"; then break; fi
+              echo "Fallo intento $i, limpiando parciales"
+              rm -rf "$ANDROID_HOME/.temp" "$ANDROID_HOME/ndk/27.0.12077973"
+              if [ "$i" = "3" ]; then echo "##[error]NDK no descargable tras 3 intentos"; exit 1; fi
+              sleep 15
+            done
+          fi
+          ls $ANDROID_HOME/ndk
+          cat $ANDROID_HOME/ndk/27.0.12077973/source.properties
+      - uses: gradle/actions/setup-gradle@v3
+      - run: gradle :app:assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with: { name: EPHORASL-debug, path: app/build/outputs/apk/debug/*.apk }

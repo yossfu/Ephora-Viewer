@@ -1,5 +1,5 @@
 name: EPHORA APK
-on: { push: { branches: [main] }, workflow_dispatch: {} }
+on: { push: { branches: [main, ephora-7.74-real-sl-rebuild] }, workflow_dispatch: {} }
 jobs:
   build:
     runs-on: ubuntu-latest

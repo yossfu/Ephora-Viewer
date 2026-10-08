@@ -148,6 +148,12 @@ class SLMessage(val def: MessageDef) {
     /** Bytes the decoded body occupied. */
     var bodyLength: Int = 0
 
+    /** UDP packet sequence that carried this message; -1 when locally created. */
+    var packetSequence: Int = -1
+
+    /** True when the simulator marked the packet as a resend. */
+    var packetResent: Boolean = false
+
     /**
      * True when every field of the body was read to the end. A body that ran out
      * (or a field a newer simulator named differently) reads as `false`, which is

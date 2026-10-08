@@ -295,6 +295,8 @@ class Circuit(private val scope: CoroutineScope) {
                         LENIENT.contains(def.name)
                     )
                     if (message != null) {
+                        message.packetSequence = parsed.header.sequence
+                        message.packetResent = parsed.header.resent
                         messageFlow.tryEmit(message)
                     } else {
                         reportUndecodable(def.name, parsed.bodyLength)

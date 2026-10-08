@@ -174,6 +174,10 @@ class SLConnection(
      * siguiente [sendAgentUpdate].
      */
     @Volatile private var nudgePulse = 0L
+    /** Highest simulator UDP sequence that produced an accepted self-avatar update. */
+    @Volatile private var lastOwnAvatarPacketSequence = -1
+    /** Last self-avatar position accepted by the viewer; used to undo stale UDP updates. */
+    @Volatile private var lastAcceptedAgentPosition: Vector3 = Vector3.ZERO
     /** Inicio de la pulsación actual por acción (reloj monotónico). */
     private val pressStartMillis = HashMap<MoveAction, Long>()
     @Volatile private var coarseLogged = false
@@ -382,6 +386,8 @@ class SLConnection(
         unknownEventsLogged.clear()
         instantMessagesRequested = false
         capsRetried = false
+        lastOwnAvatarPacketSequence = -1
+        lastAcceptedAgentPosition = Vector3.ZERO
         lastObjectLogCount = -1
         ackedSequences.clear()
         controlFlags = 0L
@@ -974,24 +980,27 @@ class SLConnection(
                 }
             }
             "ObjectUpdate" -> {
+                val ownRevisionBefore = ownAvatarObject()?.revision ?: -1
                 val count = ObjectUpdateDecoder.applyFull(message, world)
                 if (count > 0) {
                     world.noteFullUpdate()
-                    adoptAgentObject()
+                    adoptAgentObject(message, ownRevisionBefore)
                 }
             }
             "ObjectUpdateCompressed" -> {
+                val ownRevisionBefore = ownAvatarObject()?.revision ?: -1
                 val count = ObjectUpdateDecoder.applyCompressed(message, world)
                 if (count > 0) {
                     world.noteCompressedUpdate()
-                    adoptAgentObject()
+                    adoptAgentObject(message, ownRevisionBefore)
                 }
             }
             "ImprovedTerseObjectUpdate" -> {
+                val ownRevisionBefore = ownAvatarObject()?.revision ?: -1
                 val count = ObjectUpdateDecoder.applyTerse(message, world)
                 if (count > 0) {
                     world.noteTerseUpdate()
-                    adoptAgentObject()
+                    adoptAgentObject(message, ownRevisionBefore)
                 }
             }
             "ObjectUpdateCached" -> {
@@ -1103,7 +1112,11 @@ class SLConnection(
         // the camera from being seeded to a stale corner and then "jumping" to
         // the real avatar position on the first movement update.
         val mine = ownAvatarObject()
-        val effectivePosition = if (mine?.positionKnown == true) {
+        val mineIsNewerThanMovementPacket = mine?.positionKnown == true &&
+            lastOwnAvatarPacketSequence >= 0 &&
+            message.packetSequence >= 0 &&
+            isSequenceNewer(lastOwnAvatarPacketSequence, message.packetSequence)
+        val effectivePosition = if (mine?.positionKnown == true && !mineIsNewerThanMovementPacket) {
             mine.position
         } else {
             movementCompletePosition
@@ -1115,6 +1128,10 @@ class SLConnection(
         )
         world.agentPosition = effectivePosition
         world.agentPositionKnown = true
+        lastAcceptedAgentPosition = effectivePosition
+        if (message.packetSequence >= 0) {
+            lastOwnAvatarPacketSequence = message.packetSequence
+        }
         MovementAudit.noteMovementComplete(movementCompletePosition)
         log("Posicion inicial: " + movementCompletePosition)
         if (mine?.positionKnown == true) {
@@ -1126,26 +1143,54 @@ class SLConnection(
         sendRetrieveInstantMessages()
     }
 
-    /** Once our own avatar object shows up, follow its real position. */
-    private fun adoptAgentObject() {
+    /**
+     * Accepts a self-avatar position only when this UDP packet actually changed
+     * that object, and only when its packet sequence is newer than the last
+     * accepted self-avatar update. Second Life UDP can deliver resent/out-of-
+     * order object packets; blindly copying the object after every batch made
+     * the camera snap back to an older position.
+     */
+    private fun adoptAgentObject(message: SLMessage, ownRevisionBefore: Int) {
         val mine = ownAvatarObject() ?: return
-        if (!mine.positionKnown) {
+        if (!mine.positionKnown || mine.revision == ownRevisionBefore) {
             return
         }
 
-        // The own avatar object is the authoritative in-world position. Do not
-        // gate this on AgentMovementComplete: the packet order is not guaranteed,
-        // and the object may be fully known first.
+        val sequence = message.packetSequence
+        if (sequence >= 0 && lastOwnAvatarPacketSequence >= 0 &&
+            !isSequenceNewer(sequence, lastOwnAvatarPacketSequence)
+        ) {
+            // The decoder has already merged the stale packet into the object.
+            // Restore the last accepted position immediately so the render
+            // thread cannot inherit the stale teleport/movement for a frame.
+            mine.position = lastAcceptedAgentPosition
+            world.agentPosition = lastAcceptedAgentPosition
+            world.agentPositionKnown = true
+            sessionFlow.value = sessionFlow.value.copy(
+                position = lastAcceptedAgentPosition,
+                positionKnown = true
+            )
+            MovementAudit.noteOwnObject(mine.localId, mine.position)
+            return
+        }
+
+        if (sequence >= 0) {
+            lastOwnAvatarPacketSequence = sequence
+        }
+        lastAcceptedAgentPosition = mine.position
         world.agentPosition = mine.position
         world.agentPositionKnown = true
         sessionFlow.value = sessionFlow.value.copy(
             position = mine.position,
             positionKnown = true
         )
-        // The audit's link 4: our own object was seen, and here is where it
-        // is. Whether this number ever changes is what separates "the
-        // simulator is not moving us" from "nothing local follows us".
         MovementAudit.noteOwnObject(mine.localId, mine.position)
+    }
+
+    /** RFC-style serial-number comparison for Second Life's 32-bit UDP sequence. */
+    private fun isSequenceNewer(candidate: Int, previous: Int): Boolean {
+        val delta = (candidate.toLong() - previous.toLong()) and 0xFFFFFFFFL
+        return delta in 1L until 0x80000000L
     }
 
     private fun handleLayerData(message: SLMessage) {

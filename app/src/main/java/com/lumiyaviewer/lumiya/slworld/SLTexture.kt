@@ -237,7 +237,13 @@ class SLTextureFace(
             val rt = -s * si + t * c
             val slU = rs * face.repeatU + face.offsetU + 0.5f
             val slV = rt * face.repeatV + face.offsetV + 0.5f
-            return Pair(slU, 1f - slV)
+            // Second Life UVs are defined over [0,1] and any out-of-range sample is
+            // only a by-product of a transformed planar projection or seam math; keep
+            // the stage bounded so the material does not tile incorrectly when a face
+            // lands just outside the canonical range.
+            val outU = slU.coerceIn(0f, 1f)
+            val outV = (1f - slV).coerceIn(0f, 1f)
+            return Pair(outU, outV)
         }
 
         /**

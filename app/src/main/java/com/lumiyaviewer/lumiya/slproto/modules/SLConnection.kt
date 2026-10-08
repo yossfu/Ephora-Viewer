@@ -27,6 +27,7 @@ import com.lumiyaviewer.lumiya.slproto.movement.AgentUpdateBuilder
 import com.lumiyaviewer.lumiya.slproto.movement.MoveAction
 import com.lumiyaviewer.lumiya.slproto.movement.MovementAudit
 import com.lumiyaviewer.lumiya.slproto.world.ObjectUpdateDecoder
+import com.lumiyaviewer.lumiya.slproto.world.SceneObject
 import com.lumiyaviewer.lumiya.slproto.world.ObjectUpdateDiagnostics
 import com.lumiyaviewer.lumiya.slproto.world.WorldModel
 import kotlinx.coroutines.CompletableDeferred
